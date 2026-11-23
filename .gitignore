@@ -1,0 +1,10 @@
+node_modules
+dist
+*.tsbuildinfo
+test-results
+playwright-report
+__pycache__/
+.claude/
+
+# Design guide and reference images (local only)
+design/

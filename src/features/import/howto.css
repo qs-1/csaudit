@@ -1,0 +1,115 @@
+/* How-to animation (HowTo.tsx). The Empower window copies that site's look on purpose so it's recognisable:
+   periwinkle banner, glossy navy tabs, beige page, striped table, yellow term totals. It stays light in dark mode,
+   like the real site. The audit's own box at the end uses the app's tokens. */
+
+.ht-stage { position: relative; height: 300px; border-radius: 12px; background: rgb(var(--surface-2)); overflow: hidden; transition: opacity .3s cubic-bezier(.22, 1, .36, 1); }
+.ht-stage.ht-fade { opacity: 0; }
+.ht-win { position: absolute; inset: 14px 14px 0 14px; border-radius: 10px 10px 0 0; overflow: hidden; transition: transform .6s cubic-bezier(.22, 1, .36, 1), opacity .4s cubic-bezier(.22, 1, .36, 1); }
+.ht-emp { background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / .08), 0 10px 30px -10px rgb(0 0 0 / .25); }
+.ht-bar { height: 26px; display: flex; align-items: center; padding: 0 10px; background: #f1f1f0; border-bottom: 1px solid #e3e3e0; }
+.ht-url { flex: 1; height: 16px; border-radius: 8px; background: #fff; color: #6b6b6b; font-size: 10px; line-height: 16px; padding: 0 8px; white-space: nowrap; overflow: hidden; }
+.ht-view { position: absolute; top: 26px; left: 0; right: 0; bottom: 0; overflow: hidden; background: rgb(241 239 230); }
+.ht-page { width: 1000px; transform-origin: 0 0; font: 12px/14px Arial, Helvetica, sans-serif; color: #000; background: rgb(241 239 230); }
+.ht-page.ht-move { transition: transform 1s cubic-bezier(.22, 1, .36, 1); }
+
+/* Banner: a faceted periwinkle wash, the crest, the name in Copperplate */
+.ht-banner {
+  position: relative; height: 82px;
+  background:
+    linear-gradient(118deg, transparent 0 33%, rgb(255 255 255 / .38) 33% 40%, transparent 40%),
+    linear-gradient(62deg, transparent 0 57%, rgb(255 255 255 / .32) 57% 65%, transparent 65%),
+    linear-gradient(140deg, transparent 0 74%, rgb(255 255 255 / .28) 74% 80%, transparent 80%),
+    linear-gradient(28deg, transparent 0 18%, rgb(150 150 235 / .18) 18% 26%, transparent 26%),
+    linear-gradient(90deg, #b9baf3 0%, #e1d5fa 12%, #e3e3fb 30%, #c9dcf9 50%, #e4edfe 62%, #c5d6f4 80%, #bccdef 100%);
+}
+.ht-crest { position: absolute; left: 60px; top: 4px; width: 72px; height: 74px; }
+.ht-name { position: absolute; left: 190px; top: 8px; width: 540px; text-align: center; color: #0b4f9c; font-family: 'Copperplate Gothic Bold', Copperplate, 'Times New Roman', serif; font-weight: 700; font-variant: small-caps; }
+.ht-name b { display: block; font-size: 38px; line-height: 40px; font-weight: 700; letter-spacing: .01em; }
+.ht-name span { display: block; font-size: 24px; line-height: 28px; }
+.ht-date { position: absolute; right: 12px; bottom: 6px; color: #fff; font-weight: 700; font-size: 11px; text-shadow: 0 0 2px rgb(120 130 200 / .6); }
+.ht-home { display: flex; justify-content: space-between; background: #fff; border: 1px solid #555; padding: 2px 4px; line-height: 14px; }
+.ht-home a, .ht-link { color: #00f; }
+
+/* Tabs: 120 x 30, a lavender gloss over navy, eight to a row */
+.ht-tabs { display: flex; flex-wrap: wrap; width: 960px; margin: 26px 0 0; padding: 0; list-style: none; }
+.ht-tab {
+  position: relative; width: 120px; height: 30px; border-radius: 7px 6px 0 0; color: #fff; font-size: 12px; line-height: 30px; text-align: center; white-space: nowrap;
+  background: linear-gradient(#282b6f 0 1px, #656091 1px 2px, #9791b5 2px 7px, #656091 7px 12px, #282b6f 12px);
+  box-shadow: inset 1px 0 0 rgb(255 255 255 / .12);
+}
+.ht-tab.ht-b { font-weight: 700; }
+.ht-tab.ht-on { background: linear-gradient(#282b6f 0 1px, #7d78ad 1px 2px, #b3aed2 2px 7px, #7d78ad 7px 12px, #3b3f8a 12px); }
+.ht-drop { position: absolute; z-index: 2; top: 30px; left: 0; width: 210px; background: #fff; border: 1px solid #8f95bf; text-align: left; font-weight: 400; color: #000; line-height: 20px; opacity: 0; transform: translateY(-4px); transition: opacity .2s, transform .25s cubic-bezier(.22, 1, .36, 1); }
+.ht-tab.ht-open { z-index: 3; }
+.ht-tab.ht-open .ht-drop { opacity: 1; transform: none; }
+.ht-drop span { display: block; padding: 0 8px; }
+.ht-drop span.ht-hi { background: #dfe4f5; }
+
+/* The page under the tabs */
+.ht-sheet { background: #fff; padding: 10px 12px 40px; min-height: 980px; }
+.ht-placeholder i { display: block; height: 10px; background: #e6e6e6; margin: 12px 0; border-radius: 2px; }
+.ht-page:not(.ht-loaded) .ht-tr { display: none; }
+.ht-page.ht-loaded .ht-placeholder { display: none; }
+.ht-title { text-align: center; font-size: 30px; line-height: 38px; color: #282b6f; margin: 4px 0 12px; }
+.ht-title b { font-family: 'Arial Black', Arial, sans-serif; font-weight: 900; }
+.ht-filter { margin-bottom: 16px; }
+.ht-filter .ht-link { font-size: 17px; font-weight: 700; }
+.ht-body { width: 760px; }
+.ht-green { color: #008000; font-weight: 700; margin: 12px 0 2px; }
+.ht-info { display: grid; grid-template-columns: 1.7fr 1fr 1.1fr 1.1fr .5fr; font-weight: 700; }
+.ht-sh { text-align: right; color: #f00; font-weight: 700; margin-top: 8px; }
+.ht-page table { width: 100%; border-collapse: collapse; }
+.ht-page th { text-align: left; text-decoration: underline; font-weight: 700; padding: 2px 2px 0; }
+.ht-page td { padding: 0 2px; white-space: nowrap; }
+.ht-page tbody tr:nth-child(even) { background: #dfdfdf; }
+.ht-page tr.ht-tot { background: rgb(250 250 204); font-weight: 700; }
+.ht-page .ht-r { text-align: right; }
+/* Select all: text takes the browser's selection colour, top to bottom */
+.ht-page .ht-s { transition: background-color .25s; }
+.ht-page.ht-sel .ht-s { background-color: #a8cdfb; }
+.ht-page.ht-sel .ht-tab { box-shadow: inset 0 0 0 40px rgb(80 140 240 / .45); }
+
+/* The audit's own import box */
+.ht-audit { background: rgb(var(--bg)); transform: translateX(110%); padding: 16px 16px 0; }
+.ht-stage.ht-swap .ht-emp { transform: translateX(-110%); opacity: 0; }
+.ht-stage.ht-swap .ht-audit { transform: none; }
+.ht-ta { position: relative; height: 128px; padding: 12px 14px; overflow: hidden; }
+.ht-ph { position: absolute; inset: 12px 14px; transition: opacity .2s; }
+.ht-ln { opacity: 0; transform: translateY(3px); transition: opacity .25s cubic-bezier(.22, 1, .36, 1), transform .25s cubic-bezier(.22, 1, .36, 1); white-space: nowrap; }
+.ht-ln.ht-in { opacity: 1; transform: none; }
+.ht-go { opacity: .35; transition: opacity .2s, transform .12s; }
+.ht-go.ht-ready { opacity: 1; }
+.ht-press { transform: scale(.94); }
+
+/* Pointer: an arrow with a mouse, a fingertip on phones */
+.ht-cursor { position: absolute; left: 0; top: 0; z-index: 5; pointer-events: none; transition: transform .8s cubic-bezier(.22, 1, .36, 1); }
+.ht-cursor svg { display: block; filter: drop-shadow(0 1px 1px rgb(0 0 0 / .3)); }
+.ht-finger { width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%; background: rgb(23 23 23 / .2); box-shadow: 0 0 0 2px #fff, 0 0 0 3px rgb(23 23 23 / .25); opacity: 0; transition: transform .2s cubic-bezier(.22, 1, .36, 1), opacity .3s, box-shadow .7s cubic-bezier(.22, 1, .36, 1); }
+.ht-finger.ht-show { opacity: 1; }
+.ht-finger.ht-down { transform: scale(.8); }
+.ht-finger.ht-hold { box-shadow: 0 0 0 2px #fff, 0 0 0 12px rgb(23 23 23 / .14); }
+.ht-ripple { position: absolute; width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 50%; border: 2px solid rgb(23 23 23 / .35); z-index: 4; pointer-events: none; animation: ht-ripple .5s cubic-bezier(.22, 1, .36, 1) forwards; }
+@keyframes ht-ripple { from { transform: scale(.3); opacity: 1; } to { transform: scale(1.3); opacity: 0; } }
+
+/* Keys, the phone's text menu, the copied note */
+/* Bottom centre: clear of the cursor's targets on every step (Continue sits bottom right). */
+.ht-keys { position: absolute; left: 50%; bottom: 14px; z-index: 6; display: flex; gap: 5px; opacity: 0; transform: translate(-50%, 6px); transition: opacity .25s cubic-bezier(.22, 1, .36, 1), transform .3s cubic-bezier(.22, 1, .36, 1); }
+.ht-keys.ht-show { opacity: 1; transform: translate(-50%, 0); }
+.ht-kbd { min-width: 34px; height: 34px; padding: 0 10px; border-radius: 9px; background: rgb(var(--surface)); color: rgb(var(--fg)); box-shadow: 0 2px 0 rgb(var(--fg) / .14), 0 0 0 1px rgb(var(--fg) / .08); font-size: 13px; font-weight: 500; line-height: 34px; text-align: center; transition: transform .1s, box-shadow .1s; }
+.ht-kbd.ht-dn { transform: translateY(2px); box-shadow: 0 0 0 rgb(var(--fg) / .14), 0 0 0 1px rgb(var(--fg) / .08); }
+.ht-menu { position: absolute; z-index: 6; display: flex; overflow: hidden; border-radius: 10px; background: #262628; box-shadow: 0 8px 24px -6px rgb(0 0 0 / .4); opacity: 0; transform: translateY(4px) scale(.96); transition: opacity .2s, transform .25s cubic-bezier(.22, 1, .36, 1); pointer-events: none; }
+.ht-menu.ht-show { opacity: 1; transform: none; }
+.ht-menu span { color: #fff; font-size: 12px; font-weight: 500; line-height: 32px; padding: 0 12px; white-space: nowrap; transition: background .15s; }
+.ht-menu span + span { border-left: 1px solid rgb(255 255 255 / .14); }
+.ht-menu span.ht-hi { background: rgb(255 255 255 / .16); }
+.ht-toast { position: absolute; z-index: 6; left: 50%; top: 40px; transform: translate(-50%, -6px); border-radius: 999px; background: rgb(var(--fg)); color: rgb(var(--bg)); font-size: 12px; font-weight: 500; line-height: 28px; padding: 0 12px; opacity: 0; transition: opacity .2s, transform .3s cubic-bezier(.22, 1, .36, 1); }
+.ht-toast.ht-show { opacity: 1; transform: translate(-50%, 0); }
+
+/* Step line */
+.ht-cap { animation: ht-cap .3s cubic-bezier(.22, 1, .36, 1); }
+@keyframes ht-cap { from { opacity: 0; transform: translateY(4px); } }
+.ht-cap kbd { display: inline-block; height: 22px; padding: 0 6px; border-radius: 6px; background: rgb(var(--surface-2)); box-shadow: 0 1px 0 rgb(var(--fg) / .14); font: inherit; font-size: 12px; font-weight: 500; line-height: 22px; vertical-align: 1px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ht-stage *, .ht-stage, .ht-cap { transition-duration: 0s !important; animation-duration: 0s !important; }
+}

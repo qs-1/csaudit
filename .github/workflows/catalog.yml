@@ -1,0 +1,57 @@
+# Keeps section lists in src/data/terms current. Runs on a schedule, or from the Actions tab
+# (Run workflow, optionally with term codes such as "2027FA"). Commits only when something changed;
+# the push makes Vercel redeploy. If FCCU changes the page, the run fails, GitHub emails you, and the
+# site keeps the last good data.
+name: Catalog sync
+
+on:
+  schedule:
+    - cron: '7 * * * *' # every 60 minutes (UTC)
+  workflow_dispatch:
+    inputs:
+      terms:
+        description: 'Term codes, space separated (blank: newest term)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: catalog-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: pip install requests beautifulsoup4
+      - name: Fetch sections
+        run: python scripts/scrape.py ${{ inputs.terms }}
+      - name: Detect changes
+        id: diff
+        run: |
+          # public/sync.json changes on every run (the check time). Tests only run when section data changed.
+          git add src/data scripts/raw public/sync.json
+          if git diff --cached --quiet -- src/data scripts/raw; then echo "data=false" >> "$GITHUB_OUTPUT"; else echo "data=true" >> "$GITHUB_OUTPUT"; fi
+      - name: Install dependencies
+        if: steps.diff.outputs.data == 'true'
+        run: npm ci
+      - name: Check data
+        if: steps.diff.outputs.data == 'true'
+        run: npx tsc --noEmit && npx vitest run
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ "${{ steps.diff.outputs.data }}" = "true" ]; then msg="Catalog sync"; else msg="Catalog check"; fi
+          git commit -m "$msg $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push
