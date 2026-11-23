@@ -8,7 +8,8 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // Not autoUpdate: that reloads the page the moment a new version installs. main.tsx applies it in the background.
+      registerType: 'prompt',
       injectRegister: false,
       manifest: false,
       workbox: {
@@ -20,7 +21,6 @@ export default defineConfig({
         navigateFallbackDenylist: [/^\/docs\//],
         cleanupOutdatedCaches: true,
         clientsClaim: true,
-        skipWaiting: true,
       },
     }),
   ],

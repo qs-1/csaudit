@@ -13,6 +13,8 @@
     <meta name="description" content="Degree audit and semester planner for BS Computer Science at FCCU. Runs in your browser." />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- Dark before any CSS or script arrives, so loading in dark mode never shows a white page. -->
+    <style>@media (prefers-color-scheme: dark) { html { background: #141415; color-scheme: dark; } }</style>
   </head>
   <body>
     <div id="root"></div>

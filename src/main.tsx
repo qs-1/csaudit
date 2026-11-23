@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { applyPalette, storedPalette } from './lib/palette';
 import { decodePlan } from './engine/share';
 import { TERMS } from './data/registry';
-import { actions } from './state/store';
+import { actions, useStore } from './state/store';
 
 applyPalette(storedPalette());
 
@@ -23,7 +23,25 @@ if (query.has('plan')) {
 
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 
-if (import.meta.env.PROD) registerSW({ immediate: true });
+// The theme class goes on before the first render, so a reload never paints a light frame in dark mode.
+{
+  const { theme } = useStore.getState();
+  const dark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.classList.toggle('dark', dark);
+}
+
+// An update waits until the tab is in the background, then reloads there. Reloading the moment it finished
+// installing (a few seconds after opening the site following a deploy) flashed the page white mid-use.
+if (import.meta.env.PROD) {
+  const update = registerSW({
+    immediate: true,
+    onNeedRefresh() {
+      const apply = () => { if (document.visibilityState === 'hidden') { document.removeEventListener('visibilitychange', apply); void update(); } };
+      document.addEventListener('visibilitychange', apply);
+      apply();
+    },
+  });
+}
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
