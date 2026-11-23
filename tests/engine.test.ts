@@ -16,6 +16,20 @@ const run = (specs: Spec[], a = {}, o = {}) => audit(parseTranscript(paste(specs
 const codes = (ls: { code: string }[]) => ls.map((l) => l.code);
 
 describe('parser', () => {
+  it('reads the site\'s own "Copy as a table" output back in, old or new column set', () => {
+    const head = ['Term', 'Code', 'Title', 'Grade', 'Attempted', 'Earned', 'Points', 'Replaced'];
+    const lines = [
+      ['2027 Spring', 'CSCS 201', 'Multivariate Calculus', 'In progress', 0, 0, 0, ''],
+      ['2025 Spring', 'CSCS 201', 'Multivariate Calculus', 'D', 3, 3, 3, ''],
+      ['2024 Fall', 'CSCS 201', 'Multivariate Calculus', 'D', 0, 0, 0, 'Yes'],
+    ];
+    const old = [head, ...lines].map((l) => l.join('\t')).join('\n');
+    const r = parseTranscript(old).rows;
+    expect(r.map((x) => [x.ip, x.grade, x.rep, x.pts])).toEqual([[true, '', false, 0], [false, 'D', false, 3], [false, 'D', true, 0]]);
+    expect(parseTranscript(old.replace(/\t+/g, '  ')).rows).toHaveLength(3);
+    const sec = [[...head, 'Section'], ...lines.map((l) => [...l, 'B'])].map((l) => l.join('\t')).join('\n');
+    expect(parseTranscript(sec).rows[0]!.sec).toBe('B');
+  });
   it('reads the same rows from Chrome, Safari and Firefox pastes', () => {
     const [c, s, f] = (['chrome', 'safari', 'firefox'] as const).map((st) => parseTranscript(paste(MAIN, st)));
     expect(c!.rows).toHaveLength(MAIN.length);
@@ -509,9 +523,13 @@ describe('gpa', () => {
     expect(e.cgpa).toBeGreaterThan(s.cgpa);
     expect(e.loadCredits).toBe(worst.att);
   });
-  it('leaves out courses already being retaken', () => {
-    const rows = [...t.rows, { term: '2026 Fall', code: 'CSCS 203', title: 'DE', lab: false, ip: true, grade: '', rep: false, att: 0, ern: 0, pts: 0 }];
-    expect(retakeOptions(rows, cat).map((o) => o.code)).not.toContain('CSCS 203');
+  it('keeps courses already being retaken, marked, and adds no load for them', () => {
+    const rows = t.rows.map((r) => (r.code === 'CSCS 203' ? { ...r, grade: 'D', pts: r.att } : r));
+    const withIp = [...rows, { term: '2026 Fall', code: 'CSCS 203', title: 'DE', lab: false, ip: true, grade: '', rep: false, att: 0, ern: 0, pts: 0 }];
+    const opts = retakeOptions(withIp, cat);
+    const o = opts.find((x) => x.code === 'CSCS 203')!;
+    expect(o.ipTerm).toBe('2026 Fall');
+    expect(applyRetakes(stats(withIp, cat), opts, { 'CSCS 203': 'A' }).loadCredits).toBe(0);
   });
   it('solves the target', () => {
     const s = solveTarget(330, 100, 20, 3.3);

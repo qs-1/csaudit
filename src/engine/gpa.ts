@@ -63,20 +63,21 @@ export function replacedByIp(rows: Row[]): { att: number; pts: number; codes: st
   return { att: old.reduce((a, r) => a + r.att, 0), pts: old.reduce((a, r) => a + r.pts, 0), codes: old.map((r) => r.code) };
 }
 
-export interface RetakeOption { code: string; title: string; grade: string; att: number; pts: number; major: boolean; term: string }
+/** `ipTerm` is set when a retake of this attempt is already registered (the term it is in): picking a grade then says how it will go, and adds no load. */
+export interface RetakeOption { code: string; title: string; grade: string; att: number; pts: number; major: boolean; term: string; ipTerm?: string }
 
-/** Attempts graded C- or lower, which FCCU allows retaking. Courses already being retaken are left out. */
+/** Attempts graded C- or lower, which FCCU allows retaking as often as needed. A course already being retaken stays, marked with `ipTerm`. */
 export function retakeOptions(rows: Row[], cat: Catalog): RetakeOption[] {
-  const retaking = new Set(rows.filter((r) => r.ip).map((r) => r.code));
+  const retaking = new Map(rows.filter((r) => r.ip).map((r) => [r.code, r.term] as const));
   return rows
-    .filter((r) => !r.rep && !r.ip && canRetake(r.grade) && r.att > 0 && !retaking.has(r.code))
-    .map((r) => ({ code: r.code, title: r.title, grade: r.grade, att: r.att, pts: r.pts, major: isMajor(r.code, cat), term: r.term }))
+    .filter((r) => !r.rep && !r.ip && canRetake(r.grade) && r.att > 0)
+    .map((r) => ({ code: r.code, title: r.title, grade: r.grade, att: r.att, pts: r.pts, major: isMajor(r.code, cat), term: r.term, ...(retaking.has(r.code) ? { ipTerm: retaking.get(r.code)! } : {}) }))
     .sort((a, b) => GP[a.grade]! - GP[b.grade]! || b.att - a.att);
 }
 
 export interface RetakeEffect { cgpa: number; mgpa: number; loadCredits: number; qp: number; mqp: number }
 
-/** Applies chosen retake grades. Load rises by the retaken credits; the old attempt is replaced. */
+/** Applies chosen retake grades. Load rises by the retaken credits (not for a retake already registered); the old attempt is replaced. */
 export function applyRetakes(s: Stats, opts: RetakeOption[], picks: Record<string, string | undefined>): RetakeEffect {
   let qp = s.qp, mqp = s.mqp, load = 0;
   for (const o of opts) {
@@ -85,7 +86,7 @@ export function applyRetakes(s: Stats, opts: RetakeOption[], picks: Record<strin
     const d = GP[g]! * o.att - o.pts;
     qp += d;
     if (o.major) mqp += d;
-    load += o.att;
+    if (!o.ipTerm) load += o.att; // a registered retake is already in the load
   }
   return { qp, mqp, cgpa: s.att ? qp / s.att : 0, mgpa: s.matt ? mqp / s.matt : 0, loadCredits: load };
 }

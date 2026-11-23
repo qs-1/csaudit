@@ -25,8 +25,8 @@ export function TranscriptScreen() {
 
   const copy = () => {
     const tsv = [
-      ['Term', 'Code', 'Title', 'Grade', 'Attempted', 'Earned', 'Points', 'Replaced'].join('\t'),
-      ...rows.map((r) => [r.term, r.code, r.title, r.ip ? 'In progress' : r.grade, r.att, r.ern, r.pts, r.rep ? 'Yes' : ''].join('\t')),
+      ['Term', 'Code', 'Title', 'Grade', 'Attempted', 'Earned', 'Points', 'Replaced', 'Section'].join('\t'),
+      ...rows.map((r) => [r.term, r.code, (r.lab ? '*' : '') + r.title, r.ip ? 'In progress' : r.grade, r.att, r.ern, r.pts, r.rep ? 'Yes' : '', r.sec ?? ''].join('\t')),
     ].join('\n');
     navigator.clipboard.writeText(tsv).then(() => toast.success('Copied as a table'), () => toast.error('Copy failed'));
   };

@@ -38,6 +38,33 @@ const SCHED_TOTALS = /Undergraduate Totals\s+Cr Enrl\s+Cr Att\s+Cr Ern\s+Qual Pt
 const SEASON: Record<string, string> = { FA: 'Fall', SP: 'Spring', SU: 'Summer', WN: 'Winter', WI: 'Winter' };
 const GRADE_POINTS: Record<string, number> = { A: 4, 'A-': 3.7, 'B+': 3.3, B: 3, 'B-': 2.7, 'C+': 2.3, C: 2, 'C-': 1.7, 'D+': 1.3, D: 1, F: 0 };
 
+/* The site's own "Copy as a table" output, pasted back in: tab-separated, one row per attempt, e.g.
+   "2026 Spring\tCOMP 302\tTheory of Automata\tC-\t3\t3\t5.1\t". The grade reads "In progress" until one is posted, "Yes" in the
+   last column marks a replaced attempt, and an optional trailing Section column carries the section. A "*" title prefix is a lab.
+   Matched on whitespace rather than tabs, so a paste that turned tabs into spaces still reads. */
+const TABLE_ROW = /^(\d{4})\s+(Fall|Spring|Summer|Winter)\s+([A-Z]{2,4}) ?(\d{3}[A-Z]?)\s+(.+?)\s+(In progress|[A-Z]{1,3}[+-]?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)(?:\s+(Yes))?(?:\s+([A-Z0-9]{1,3}))?$/i;
+
+function parseTable(t: string): Transcript {
+  const rows: Row[] = [];
+  for (const line of t.split(/\r?\n/)) {
+    const m = line.trim().match(TABLE_ROW);
+    if (!m) continue;
+    const ip = /^in progress$/i.test(m[6]!);
+    const grade = ip ? '' : m[6]!.toUpperCase();
+    const title = m[5]!.trim();
+    rows.push({
+      term: `${m[1]} ${m[2]![0]!.toUpperCase()}${m[2]!.slice(1).toLowerCase()}`,
+      code: `${m[3]!.toUpperCase()} ${m[4]!.toUpperCase()}`,
+      ...(m[11] ? { sec: m[11].toUpperCase() } : {}),
+      title: title.replace(/^\*/, ''),
+      lab: title.startsWith('*'),
+      ip, grade, rep: !!m[10],
+      att: ip ? 0 : +m[7]!, ern: ip ? 0 : +m[8]!, pts: ip ? 0 : +m[9]!,
+    });
+  }
+  return { rows, totals: null };
+}
+
 /** Credits a course carried in a given term ("2025 Fall"), when the transcript doesn't say. */
 export type CreditLookup = (code: string, term: string) => number | undefined;
 const FALLBACK_CREDITS = 3;
@@ -91,7 +118,10 @@ function parseSchedule(t: string, credits?: CreditLookup): Transcript {
 export function parseTranscript(raw: string, credits?: CreditLookup): Transcript {
   const t = normalise(raw);
   const marks = [...t.matchAll(TERM_MARK)];
-  if (!marks.length) return parseSchedule(t, credits);
+  if (!marks.length) {
+    const table = parseTable(t);
+    return table.rows.length ? table : parseSchedule(t, credits);
+  }
   const rows: Row[] = [];
 
   marks.forEach((m, i) => {

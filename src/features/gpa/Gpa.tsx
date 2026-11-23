@@ -99,7 +99,12 @@ function Target({ m, className }: { m: Model; className?: string }) {
   const picks = useStore((s) => s.retakes);
   const stats = m.result.stats;
   const target = useStore((s) => s.target) ?? Math.min(4, Math.max(2, Math.ceil((stats.cgpa + 0.05) * 10) / 10));
-  const opts = retakeOptions(m.transcript.rows, m.catalog);
+  const all = retakeOptions(m.transcript.rows, m.catalog);
+  // New retakes change the base. A retake already registered is a grade for credits still to be graded, so it is fixed below.
+  const opts = all.filter((o) => !o.ipTerm);
+  const fixed = all.filter((o) => o.ipTerm && picks[o.code]);
+  const fAtt = fixed.reduce((a, o) => a + o.att, 0);
+  const fQp = fixed.reduce((a, o) => a + GP[picks[o.code]!]! * o.att, 0);
   const adj = applyRetakes(stats, opts, picks);
   // A retake already registered replaces its old grade: that grade leaves the CGPA and the course is graded again.
   const replaced = replacedByIp(m.transcript.rows);
@@ -107,9 +112,9 @@ function Target({ m, className }: { m: Model; className?: string }) {
   const remaining = m.result.ipCredits + m.result.need + retaking;
   const [credits, setCredits] = useState<number | null>(null);
   const cr = credits ?? remaining;
-  const sol = solveTarget(adj.qp - replaced.pts, stats.att - replaced.att, cr, target);
+  const sol = solveTarget(adj.qp - replaced.pts + fQp, stats.att - replaced.att + fAtt, Math.max(0, cr - (credits === null ? fAtt : 0)), target);
   const pos = (v: number) => `${(Math.min(4, Math.max(0, v)) / 4) * 100}%`;
-  const hasRetakes = Object.keys(picks).length > 0;
+  const hasRetakes = all.some((o) => picks[o.code]);
   const still = useReducedMotion();
 
   return (
@@ -227,7 +232,7 @@ function Retakes({ m, className }: { m: Model; className?: string }) {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-base"><Code className="mr-2">{o.code}</Code>{o.title}</p>
                   <p className="mt-0.5 text-xs text-fg-3">
-                    Got <span className="num text-fg-2">{o.grade}</span> · {o.att} cr · {termLabel(o.term)}{o.major ? ' · major' : ''}
+                    Got <span className="num text-fg-2">{o.grade}</span> · {o.att} cr · {termLabel(o.term)}{o.major ? ' · major' : ''}{o.ipTerm ? ` · retaking in ${termLabel(o.ipTerm)}` : ''}
                     {pick ? <span className="num text-fg-2 md:hidden"> · {signed(gain, 3)} CGPA</span> : null}
                   </p>
                 </div>
