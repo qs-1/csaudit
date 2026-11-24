@@ -259,9 +259,14 @@ function DesktopPlanner({ m }: { m: Model }) {
           <CourseSearch ref={searchRef} m={m} p={p} className="flex-1" />
         </Card>
         <div className="flex min-w-0 flex-col gap-5">
+          <SharedBar m={m} p={p} />
           <TermCard m={m} p={p} onOpen={() => searchRef.current?.focus()} />
           <PlanAlerts m={m} p={p} />
-          <Card className="relative px-5 pb-5 pt-5 md:px-6">
+          <Card className="relative px-5 pb-5 pt-4 md:px-6">
+            <div className="mb-3 flex items-center justify-end gap-1 text-sm text-fg-3">
+              <span className="mr-1">{plural(p.chosen.length, 'course')}</span>
+              <GridTools m={m} p={p} download={download} />
+            </div>
             <PlanGrid m={m} p={p} ghost={ghost} />
             {!p.chosen.length && !ghost.length ? (
               <div className="pointer-events-none absolute inset-0 grid place-items-center p-8">
@@ -346,6 +351,7 @@ function MobilePlanner({ m }: { m: Model }) {
       />
 
       <div className="flex flex-col gap-4">
+        <SharedBar m={m} p={p} />
         <TermCard m={m} p={p} onOpen={() => setSearch(true)} />
 
         <PlanAlerts m={m} p={p} />
@@ -361,10 +367,8 @@ function MobilePlanner({ m }: { m: Model }) {
                 options={[{ value: 'day', label: 'Day' }, { value: 'week', label: 'Week' }]}
               />
               <div className="flex items-center gap-1 text-sm text-fg-3">
-                <span>{plural(p.chosen.length, 'course')}</span>
-                <button type="button" aria-label="Download timetable" onClick={download} className="grid size-8 place-items-center rounded-md text-fg-3 hover:bg-surface-2 hover:text-fg">
-                  <Download className="size-4" strokeWidth={1.5} />
-                </button>
+                <span className="mr-1">{plural(p.chosen.length, 'course')}</span>
+                <GridTools m={m} p={p} download={download} />
               </div>
             </div>
             {view === 'day' ? (
@@ -431,6 +435,39 @@ function MobilePlanner({ m }: { m: Model }) {
       <Suggest m={m} p={p} open={suggest} onOpenChange={setSuggest} />
       <CalendarSheet m={m} p={p} open={calendar} onOpenChange={setCalendar} />
     </>
+  );
+}
+
+/** Small icon buttons over the timetable: copy a share link, download it as an image. */
+function GridTools({ m, p, download }: { m: Model; p: PlanState; download: () => void }) {
+  const none = !p.chosen.length;
+  const tool = 'grid size-8 place-items-center rounded-md text-fg-3 transition-colors hover:bg-surface-2 hover:text-fg disabled:pointer-events-none disabled:opacity-40';
+  return (
+    <>
+      <button type="button" aria-label="Copy share link" title="Copy share link" disabled={none} onClick={() => share(m, p)} className={tool}>
+        <Link2 className="size-4" strokeWidth={1.5} />
+      </button>
+      <button type="button" aria-label="Download timetable" title="Download image" disabled={none} onClick={download} className={tool}>
+        <Download className="size-4" strokeWidth={1.5} />
+      </button>
+    </>
+  );
+}
+
+/** Shown while a timetable from a share link is open: it's a preview until it's kept. */
+function SharedBar({ m, p }: { m: Model; p: PlanState }) {
+  if (!p.shared) return null;
+  return (
+    <Card className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 py-4 md:px-6">
+      <div className="min-w-0">
+        <p className="text-[15px] font-medium">Shared timetable</p>
+        <p className="text-sm text-fg-3">A preview. Your own plan is unchanged.</p>
+      </div>
+      <div className="flex gap-2">
+        <Button size="sm" onClick={actions.closeShared}>Close</Button>
+        <Button size="sm" variant="primary" onClick={() => actions.keepShared(m.registered.map((s) => s.course))}>Use as my plan</Button>
+      </div>
+    </Card>
   );
 }
 

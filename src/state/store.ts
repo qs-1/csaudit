@@ -20,6 +20,8 @@ export interface State {
   assumptions: Assumptions;
   termId: string | null; // null: the term after the transcript
   plans: Record<string, Plan>; // term id -> plan
+  /** A timetable opened from a share link: shown in place of the plan for its term, which stays untouched. */
+  shared: { termId: string; plan: Plan; back: string | null } | null;
   retakes: Record<string, string>; // course -> hoped-for grade
   prefs: Prefs;
   target: number | null; // null: a little above the current CGPA
@@ -34,6 +36,7 @@ const initial = (): State => ({
   assumptions: { ...DEFAULT_ASSUMPTIONS, exempt: [] },
   termId: null,
   plans: {},
+  shared: null,
   retakes: {},
   prefs: { ...DEFAULT_PREFS, daysOff: [] },
   target: null,
@@ -71,6 +74,13 @@ try { localStorage.removeItem('fccu-audit'); } catch { /* storage blocked */ }
 const set = useStore.setState;
 const UNDO = 'start-over';
 const get = useStore.getState;
+
+/** Changes a term's plan. While a shared timetable for that term is open, the change goes to it instead. */
+function editPlan(termId: string, f: (p: Plan) => Plan) {
+  set((s) => (s.shared?.termId === termId
+    ? { shared: { ...s.shared, plan: f(s.shared.plan) } }
+    : { plans: { ...s.plans, [termId]: f(s.plans[termId] ?? {}) } }));
+}
 
 /** When a grade is edited by hand, earned credits and points follow it. */
 export function regrade(row: Row, grade: string): Row {
@@ -120,21 +130,33 @@ export const actions = {
     });
   },
   setTerm(termId: string) { set({ termId }); },
-  pick(termId: string, course: string, sec: string) {
-    set((s) => ({ plans: { ...s.plans, [termId]: { ...s.plans[termId], [course]: sec } } }));
-  },
-  merge(termId: string, p: Plan) { set((s) => ({ plans: { ...s.plans, [termId]: { ...s.plans[termId], ...p } } })); },
+  pick(termId: string, course: string, sec: string) { editPlan(termId, (p) => ({ ...p, [course]: sec })); },
+  merge(termId: string, more: Plan) { editPlan(termId, (p) => ({ ...p, ...more })); },
   unpick(termId: string, course: string) {
-    set((s) => {
-      const { [course]: _, ...rest } = s.plans[termId] ?? {};
-      return { plans: { ...s.plans, [termId]: rest } };
+    editPlan(termId, (p) => {
+      const { [course]: _, ...rest } = p;
+      return rest;
     });
   },
-  /** Opens a timetable from a share link: its term and sections, in the planner. A transcript can be added after. */
+  /** Opens a timetable from a share link as a preview in the planner. The person's own plan isn't touched. */
   openShared(termId: string, p: Plan) {
-    set((s) => ({ termId, planOnly: s.transcript === null, plans: { ...s.plans, [termId]: p } }));
+    set((s) => ({ termId, planOnly: s.transcript === null, shared: { termId, plan: p, back: s.shared ? s.shared.back : s.termId } }));
   },
-  replacePlan(termId: string, p: Plan) { set((s) => ({ plans: { ...s.plans, [termId]: p } })); },
+  /** Leaves the shared preview, back to the term that was open before. */
+  closeShared() { set((s) => ({ shared: null, termId: s.shared ? s.shared.back : s.termId })); },
+  /**
+   * Makes the shared timetable this term's plan. `registered` are the courses on the person's own transcript for
+   * that term: those not in the shared timetable are dropped, so the plan matches what was shared.
+   */
+  keepShared(registered: string[]) {
+    const prev = get();
+    const sh = prev.shared;
+    if (!sh) return;
+    const drops = Object.fromEntries(registered.filter((c) => !(c in sh.plan)).map((c) => [c, DROPPED]));
+    set({ shared: null, plans: { ...prev.plans, [sh.termId]: { ...drops, ...sh.plan } } });
+    toast('Saved as your plan', { action: { label: 'Undo', onClick: () => set({ shared: prev.shared, plans: prev.plans }) } });
+  },
+  replacePlan(termId: string, p: Plan) { editPlan(termId, () => p); },
   retake(code: string, grade: string | undefined) {
     set((s) => {
       const { [code]: _, ...rest } = s.retakes;

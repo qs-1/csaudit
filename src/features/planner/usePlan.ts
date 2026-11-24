@@ -13,6 +13,7 @@ export const preview = (secs: Section[] | Section | null) =>
   usePreview.setState({ secs: secs ? (Array.isArray(secs) ? secs : [secs]) : [] });
 
 const EMPTY: Plan = {};
+const NONE: Section[] = [];
 const PALETTE = 8;
 
 function hash(s: string) {
@@ -41,6 +42,8 @@ export const onVar = (i: number | undefined) => (i === undefined ? '--surface' :
 export interface PlanState {
   termId: string;
   plan: Plan;
+  /** Showing a timetable opened from a share link, not the person's own plan. */
+  shared: boolean;
   chosen: Section[];
   stale: string[];
   clashes: [Section, Section][];
@@ -73,17 +76,22 @@ export function restoreToPlan(p: PlanState, s: Section) {
 
 export function usePlan(m: Model): PlanState {
   const termId = m.termEntry.id;
-  const plan = useStore((s) => s.plans[termId]) ?? EMPTY;
+  const own = useStore((s) => s.plans[termId]) ?? EMPTY;
+  const sharedPlan = useStore((s) => (s.shared?.termId === termId ? s.shared.plan : null));
+  const shared = sharedPlan !== null;
+  const plan = sharedPlan ?? own;
+  // A shared timetable is shown as it was shared: the person's own registration isn't mixed in.
+  const mine = shared ? NONE : m.registered;
   return useMemo(() => {
     const by = m.sections;
     // The registration on the transcript is the starting point. A pick for a registered course switches its section,
     // DROPPED drops it.
-    const registered = new Map(m.registered.map((s) => [s.course, s]));
+    const registered = new Map(mine.map((s) => [s.course, s]));
     const entries = Object.entries(plan).filter(([, sec]) => sec !== DROPPED);
     const picked = entries.flatMap(([c, sec]) => by[c]?.find((s) => s.sec === sec) ?? []);
-    const kept = m.registered.filter((s) => !(s.course in plan));
+    const kept = mine.filter((s) => !(s.course in plan));
     const chosen = [...kept, ...picked];
-    const dropped = m.registered.filter((s) => plan[s.course] === DROPPED);
+    const dropped = mine.filter((s) => plan[s.course] === DROPPED);
     const stale = m.term ? entries.filter(([c, sec]) => !by[c]?.some((s) => s.sec === sec)).map(([c]) => c) : [];
     const clashes = clashPairs(chosen);
     const hasLab = chosen.some((s) => isLabSection(s, m.catalog));
@@ -94,7 +102,7 @@ export function usePlan(m: Model): PlanState {
     const res = lost ? { ...m.result, free: m.result.free + lost, need: m.result.need + lost } : m.result;
     const byCourse = new Map(chosen.map((s) => [s.course, s]));
     return {
-      termId, plan, chosen, stale, clashes,
+      termId, plan, shared, chosen, stale, clashes,
       clashIds: new Set(clashes.flatMap(([a, b]) => [sid(a), sid(b)])),
       colors: assignColors(chosen.map((s) => s.course)),
       load, hasLab,
@@ -106,5 +114,5 @@ export function usePlan(m: Model): PlanState {
       inPlan: (c) => byCourse.get(c),
       clashWith: (s) => chosen.filter((o) => o.course !== s.course && clashPairs([o, s]).length > 0),
     };
-  }, [plan, m.sections, m.term, m.catalog, m.result, m.roles, m.registered, termId]);
+  }, [plan, m.sections, m.term, m.catalog, m.result, m.roles, mine, shared, termId]);
 }

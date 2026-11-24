@@ -8,9 +8,14 @@ import { Input, Stepper } from '@/ui/controls';
 import { Sheet } from '@/ui/sheet';
 import type { PlanState } from './usePlan';
 
-/** A link that opens this timetable for anyone. The plan lives in the link; nothing is uploaded. */
+/**
+ * A link that opens this timetable for anyone. The plan lives in the link; nothing is uploaded.
+ * It carries every section on the timetable, not just the stored plan: that only holds changes to the transcript's
+ * registration, so registered courses kept as they are would be missing from it.
+ */
 export function shareLink(p: PlanState): string {
-  return `${window.location.origin}${window.location.pathname}?plan=${encodePlan(p.termId, p.plan)}`;
+  const sections = Object.fromEntries(p.chosen.map((s) => [s.course, s.sec]));
+  return `${window.location.origin}${window.location.pathname}?plan=${encodePlan(p.termId, sections)}`;
 }
 
 export async function share(m: Model, p: PlanState) {

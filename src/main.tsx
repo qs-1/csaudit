@@ -18,7 +18,7 @@ if (query.has('plan')) {
   const known = shared && TERMS.some((t) => t.id === shared.termId);
   if (known) actions.openShared(shared.termId, shared.plan);
   history.replaceState(null, '', `${window.location.pathname}${known ? '#/planner' : window.location.hash}`);
-  setTimeout(() => (known ? toast('Opened a shared timetable', { description: 'Add a transcript to see what it does for your degree.' }) : toast.error('That link has no timetable in it')), 400);
+  setTimeout(() => (known ? toast('Opened a shared timetable', { description: useStore.getState().transcript ? 'Your own plan is unchanged until you choose to use this one.' : 'Add a transcript to see what it does for your degree.' }) : toast.error('That link has no timetable in it')), 400);
 }
 
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';

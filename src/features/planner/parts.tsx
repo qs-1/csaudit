@@ -231,13 +231,13 @@ export function SectionSheet({ m, p }: { m: Model; p: PlanState }) {
 export function PlanAlerts({ m, p }: { m: Model; p: PlanState }) {
   const unscheduled = p.chosen.filter((s) => s.meetings.every((x) => x.start == null));
   // Registered in this term already: it's the term being planned, even though the next new one comes after it.
-  const wrongTerm = !m.bare && m.result.nextTerm && m.termEntry.key !== m.result.nextTerm && !m.registered.length && !m.unplaced.length;
+  const wrongTerm = !m.bare && m.result.nextTerm && m.termEntry.key !== m.result.nextTerm && !m.registered.length && !m.unplaced.length && !p.shared;
   const out: { key: string; tone: 'bad' | 'warn' | 'neutral'; text: React.ReactNode }[] = [];
   if (p.clashes.length) out.push({ key: 'clash', tone: 'bad', text: <>Clashes: {p.clashes.map(([a, b]) => `${sid(a)} and ${sid(b)}`).join('; ')}</> });
   if (p.stale.length) out.push({ key: 'stale', tone: 'warn', text: <>No longer offered: {p.stale.join(', ')}. <button className="text-fg underline decoration-line underline-offset-4" onClick={() => p.stale.forEach((c) => actions.unpick(p.termId, c))}>Remove</button></> });
   if (unscheduled.length) out.push({ key: 'time', tone: 'neutral', text: <>No time published for {unscheduled.map(sid).join(', ')}</> });
-  if (m.registered.length) out.push({ key: 'reg', tone: 'neutral', text: <>Your {m.termEntry.label} registration is on the timetable. Add, switch or drop courses here to plan changes.</> });
-  if (m.unplaced.length) out.push({ key: 'unplaced', tone: 'warn', text: <>Registered but not in the section list: {m.unplaced.join(', ')}</> });
+  if (m.registered.length && !p.shared) out.push({ key: 'reg', tone: 'neutral', text: <>Your {m.termEntry.label} registration is on the timetable. Add, switch or drop courses here to plan changes.</> });
+  if (m.unplaced.length && !p.shared) out.push({ key: 'unplaced', tone: 'warn', text: <>Registered but not in the section list: {m.unplaced.join(', ')}</> });
   if (p.dropped.length) {
     const lost = p.dropped.filter((s) => !m.roles.passed.has(s.course));
     out.push({ key: 'dropped', tone: lost.length ? 'warn' : 'neutral', text: <>Dropped {p.dropped.map((s) => s.course).join(', ')}.{lost.length ? ` That's ${lost.reduce((a, s) => a + s.credits, 0)} credits to make up.` : ' A retake, so no credits lost.'}</> });
