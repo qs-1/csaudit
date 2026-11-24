@@ -30,7 +30,8 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (!id.includes('node_modules') || id.includes('pdfjs-dist')) return undefined;
+          // PDF reading and writing load only when used, so they stay out of the vendor chunk.
+          if (!id.includes('node_modules') || /pdfjs-dist|pdf-lib|fontkit|@fontsource[\/]/.test(id)) return undefined;
           if (/[\/](motion|motion-dom|motion-utils|framer-motion)[\/]/.test(id)) return 'motion';
           return 'vendor';
         },

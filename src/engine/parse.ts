@@ -44,6 +44,14 @@ const GRADE_POINTS: Record<string, number> = { A: 4, 'A-': 3.7, 'B+': 3.3, B: 3,
    Matched on whitespace rather than tabs, so a paste that turned tabs into spaces still reads. */
 const TABLE_ROW = /^(\d{4})\s+(Fall|Spring|Summer|Winter)\s+([A-Z]{2,4}) ?(\d{3}[A-Z]?)\s+(.+?)\s+(In progress|[A-Z]{1,3}[+-]?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)(?:\s+(Yes))?(?:\s+([A-Z0-9]{1,3}))?$/i;
 
+/** Rows as a tab-separated table ("Copy as a table", and the data inside a downloaded PDF). `parseTable` reads it back. */
+export function tableText(rows: Row[]): string {
+  return [
+    ['Term', 'Code', 'Title', 'Grade', 'Attempted', 'Earned', 'Points', 'Replaced', 'Section'].join('\t'),
+    ...rows.map((r) => [r.term, r.code, (r.lab ? '*' : '') + r.title, r.ip ? 'In progress' : r.grade, r.att, r.ern, r.pts, r.rep ? 'Yes' : '', r.sec ?? ''].join('\t')),
+  ].join('\n');
+}
+
 function parseTable(t: string): Transcript {
   const rows: Row[] = [];
   for (const line of t.split(/\r?\n/)) {

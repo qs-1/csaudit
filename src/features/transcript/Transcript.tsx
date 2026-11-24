@@ -1,10 +1,10 @@
 import * as Menu from '@radix-ui/react-dropdown-menu';
-import { AlertTriangle, Check, Copy, Ellipsis, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { AlertTriangle, Check, Copy, Ellipsis, FileDown, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { ScreenHeader } from '@/app/Shell';
-import { GP, GRADES, sortTerms, termLabel, type Row } from '@/engine';
+import { GP, GRADES, sortTerms, tableText, termLabel, type Row } from '@/engine';
 import { cn, num } from '@/lib/utils';
 import { useModel, type Model } from '@/state/model';
 import { actions, regrade, useStore } from '@/state/store';
@@ -24,11 +24,15 @@ export function TranscriptScreen() {
   const terms = sortTerms([...new Set(rows.map((r) => r.term))]).reverse();
 
   const copy = () => {
-    const tsv = [
-      ['Term', 'Code', 'Title', 'Grade', 'Attempted', 'Earned', 'Points', 'Replaced', 'Section'].join('\t'),
-      ...rows.map((r) => [r.term, r.code, (r.lab ? '*' : '') + r.title, r.ip ? 'In progress' : r.grade, r.att, r.ern, r.pts, r.rep ? 'Yes' : '', r.sec ?? ''].join('\t')),
-    ].join('\n');
-    navigator.clipboard.writeText(tsv).then(() => toast.success('Copied as a table'), () => toast.error('Copy failed'));
+    navigator.clipboard.writeText(tableText(rows)).then(() => toast.success('Copied as a table'), () => toast.error('Copy failed'));
+  };
+  // pdf-lib and the fonts only load when a PDF is asked for.
+  const pdf = () => {
+    const id = toast.loading('Making the PDF');
+    import('@/pdf/transcriptPdf')
+      .then(({ downloadTranscriptPdf }) => downloadTranscriptPdf(m))
+      .then(() => toast.success('Transcript downloaded', { id, description: 'Choose it on the start screen to load this transcript again.' }))
+      .catch(() => toast.error('Could not make the PDF', { id }));
   };
   const add = () => {
     const term = terms[0] ?? '';
@@ -43,7 +47,7 @@ export function TranscriptScreen() {
         title="Transcript"
         actions={
           <>
-            <MoreMenu copy={copy} />
+            <MoreMenu copy={copy} pdf={pdf} />
             <Button variant="primary" onClick={add}><Plus strokeWidth={1.75} />Add course</Button>
           </>
         }
@@ -52,7 +56,7 @@ export function TranscriptScreen() {
             <button type="button" aria-label="Add course" onClick={add} className="grid size-10 place-items-center rounded-[12px] bg-fg text-bg active:scale-[0.97]">
               <Plus className="size-[18px]" strokeWidth={1.75} />
             </button>
-            <MoreMenu copy={copy} />
+            <MoreMenu copy={copy} pdf={pdf} />
           </>
         }
       />
@@ -144,36 +148,34 @@ function Summary({ m, terms }: { m: Model; terms: string[] }) {
         ))}
       </dl>
       <TotalsCheck m={m} />
-      {mobile ? null : (
-        <ul className="mt-5 border-t border-line pt-3">
-          {terms.map((t, i) => {
-            const g = gpaOf.get(t);
-            return (
-              <li key={t || 'none'}>
-                <a href={`#${termId(t)}`} onClick={(e) => { e.preventDefault(); document.getElementById(termId(t))?.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'start' }); }} className="-mx-2 flex h-9 items-center gap-3 rounded-[10px] px-2 text-sm transition-colors hover:bg-surface-2">
-                  <span className="w-[92px] shrink-0 truncate text-fg-2">{t ? termLabel(t) : 'No term'}</span>
-                  <span className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-fg/[0.07]">
-                    {g !== undefined ? (
-                      <motion.span
-                        className="absolute inset-y-0 left-0 rounded-full bg-done"
-                        initial={still ? false : { width: 0 }}
-                        animate={{ width: `${(g / 4) * 100}%` }}
-                        transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1], delay: still ? 0 : 0.1 + i * 0.04 }}
-                      />
-                    ) : null}
-                  </span>
-                  <span className="tnum w-9 shrink-0 text-right text-fg">{g !== undefined ? num(g) : <span className="text-fg-3">IP</span>}</span>
-                </a>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      <ul className="mt-5 border-t border-line pt-3">
+        {terms.map((t, i) => {
+          const g = gpaOf.get(t);
+          return (
+            <li key={t || 'none'}>
+              <a href={`#${termId(t)}`} onClick={(e) => { e.preventDefault(); document.getElementById(termId(t))?.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'start' }); }} className={cn('-mx-2 flex items-center gap-3 rounded-[10px] px-2 text-sm transition-colors hover:bg-surface-2', mobile ? 'h-10' : 'h-9')}>
+                <span className="w-[92px] shrink-0 truncate text-fg-2">{t ? termLabel(t) : 'No term'}</span>
+                <span className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-fg/[0.07]">
+                  {g !== undefined ? (
+                    <motion.span
+                      className="absolute inset-y-0 left-0 rounded-full bg-done"
+                      initial={still ? false : { width: 0 }}
+                      animate={{ width: `${(g / 4) * 100}%` }}
+                      transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1], delay: still ? 0 : 0.1 + i * 0.04 }}
+                    />
+                  ) : null}
+                </span>
+                <span className="tnum w-9 shrink-0 text-right text-fg">{g !== undefined ? num(g) : <span className="text-fg-3">IP</span>}</span>
+              </a>
+            </li>
+          );
+        })}
+      </ul>
     </Card>
   );
 }
 
-function MoreMenu({ copy }: { copy: () => void }) {
+function MoreMenu({ copy, pdf }: { copy: () => void; pdf: () => void }) {
   return (
     <Menu.Root>
       <Menu.Trigger asChild>
@@ -185,6 +187,9 @@ function MoreMenu({ copy }: { copy: () => void }) {
         <Menu.Content align="end" sideOffset={8} className="z-50 min-w-[210px] rounded-xl bg-surface p-1 shadow-pop data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-top-1">
           <Menu.Item onSelect={copy} className="flex h-10 items-center gap-3 rounded-lg px-3 text-base outline-none data-[highlighted]:bg-surface-2">
             <Copy className="size-4 text-fg-3" strokeWidth={1.5} />Copy as a table
+          </Menu.Item>
+          <Menu.Item onSelect={pdf} className="flex h-10 items-center gap-3 rounded-lg px-3 text-base outline-none data-[highlighted]:bg-surface-2">
+            <FileDown className="size-4 text-fg-3" strokeWidth={1.5} />Download PDF
           </Menu.Item>
           <Menu.Item onSelect={actions.startOver} className="flex h-10 items-center gap-3 rounded-lg px-3 text-base outline-none data-[highlighted]:bg-surface-2">
             <RotateCcw className="size-4 text-fg-3" strokeWidth={1.5} />New transcript
