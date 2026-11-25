@@ -34,10 +34,61 @@ function useLatched<T>(open: boolean, value: T): T {
   return open ? value : last.current;
 }
 
+/**
+ * Lift a bottom drawer above the mobile virtual keyboard using `visualViewport` (where `position: fixed; bottom: 0`
+ * and `dvh` stay behind the keyboard on iOS Safari and default Android Chrome). Vaul's own `repositionInputs`
+ * has height/toggle bugs on multi-step keyboard animations, so we measure the inset directly.
+ */
+function useKeyboardInset(active: boolean) {
+  const [kb, setKb] = useState<{ inset: number; maxH?: number }>({ inset: 0 });
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!active || !vv) { setKb({ inset: 0 }); return; }
+    const update = () => {
+      const covered = window.innerHeight - vv.height;
+      if (vv.scale > 1.01 || covered <= 80) {
+        setKb((p) => (p.inset === 0 && p.maxH === undefined ? p : { inset: 0 }));
+        return;
+      }
+      const inset = Math.max(0, Math.round(covered - vv.offsetTop));
+      const maxH = Math.floor(vv.height * 0.94);
+      setKb((p) => (p.inset === inset && p.maxH === maxH ? p : { inset, maxH }));
+    };
+    // Tapping a field that is already focused re-opens the keyboard without a focus change, and Android Chrome doesn't
+    // reliably fire a visualViewport event for that. The keyboard also animates in over ~300ms, and autofocus on open
+    // can beat these listeners. So re-measure after taps and focus changes, and poll cheaply while the sheet is open.
+    const timers: number[] = [];
+    const kick = () => {
+      update();
+      for (const ms of [60, 150, 300, 500, 800]) timers.push(window.setTimeout(update, ms));
+    };
+    kick();
+    const poll = window.setInterval(update, 150);
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    window.addEventListener('resize', update);
+    document.addEventListener('focusin', kick);
+    document.addEventListener('focusout', kick);
+    document.addEventListener('pointerup', kick, true);
+    return () => {
+      window.clearInterval(poll);
+      timers.forEach(window.clearTimeout);
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+      document.removeEventListener('focusin', kick);
+      document.removeEventListener('focusout', kick);
+      document.removeEventListener('pointerup', kick, true);
+    };
+  }, [active]);
+  return kb;
+}
+
 /** A bottom drawer on phones and a panel or dialog on larger screens. */
 export function Sheet({ open, onOpenChange, title, hideTitle, children, footer, side = 'right', tall, className, autoFocus, wide }: SheetProps) {
   const mobile = useIsMobile();
   const shown = useLatched(open, { title, children, footer });
+  const kb = useKeyboardInset(mobile && open);
 
   if (mobile) {
     ({ title, children, footer } = shown);
@@ -50,12 +101,13 @@ export function Sheet({ open, onOpenChange, title, hideTitle, children, footer, 
               'fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-[20px] bg-surface outline-none',
               tall ? 'h-[94dvh]' : 'max-h-[94dvh]',
             )}
+            style={kb.inset || kb.maxH ? { bottom: kb.inset || undefined, maxHeight: kb.maxH } : undefined}
           >
             <div aria-hidden className="mx-auto mb-1 mt-2.5 h-1.5 w-10 shrink-0 rounded-full bg-fg-3/30" />
             <Drawer.Title className={cn('px-5 pb-2 pt-2 text-lg font-medium', hideTitle && 'sr-only')}>{title}</Drawer.Title>
             <Drawer.Description className="sr-only">{typeof title === 'string' ? title : 'Details'}</Drawer.Description>
             <div className={cn('min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-4', className)}>{children}</div>
-            {footer ? <div className="shrink-0 border-t px-5 pt-3" style={{ paddingBottom: 'calc(12px + var(--safe-b))' }}>{footer}</div> : <div className="pb-safe" />}
+            {footer ? <div className="shrink-0 border-t px-5 pt-3" style={{ paddingBottom: kb.inset ? 12 : 'calc(12px + var(--safe-b))' }}>{footer}</div> : <div className="pb-safe" />}
           </Drawer.Content>
         </Drawer.Portal>
       </Drawer.Root>
