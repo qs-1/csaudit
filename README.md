@@ -4,9 +4,9 @@ Degree audit and timetable planner for BS Computer Science at FCCU.
 
 **[csaudit.vercel.app](https://csaudit.vercel.app)**
 
-Paste your unofficial transcript from Empower (or drop the PDF) and it shows what you've completed and what's left. Then build a clash free timetable from the courses currently being offered.
+Paste your unofficial transcript from Empower (or drop the PDF) and it shows what you've completed and what's left. Then build a clash free timetable from the courses currently being offered, and get a notification when a full section opens.
 
-Everything runs in the browser. The transcript is never uploaded, and it's forgotten when you close the tab.
+The transcript stays in the browser. It's never uploaded, and it's forgotten when you close the tab. Seat alerts are the one part with a server: it keeps a random device id, the sections you watch and, if you turn notifications on, a push address. No name, no account.
 
 ![Overview](.github/screenshots/overview-tall.png)
 
@@ -17,16 +17,18 @@ Everything runs in the browser. The transcript is never uploaded, and it's forgo
 - **Suggested timetables**: set your start and finish times and days off. Keep sections you like, mark courses you'd only take if they fit, and pick a credit range. If nothing fits, it tells you why.
 - **Share and export**: send a timetable as a link, add it to your calendar (.ics), or save it as an image.
 - **GPA**: term-by-term history, the grades you'd need for a target CGPA, and what retakes would do.
-- **Transcript**: every course it read, checked against the transcript's own totals, and editable.
+- **Seat alerts**: watch a full section and get a notification when a seat opens, usually within two minutes. Watch a whole course to hear when a new section is added. Counts are checked every minute. Works without a transcript.
+- **Transcript**: every course it read with its instructor, checked against the transcript's own totals, and editable.
 
 ![Planner](.github/screenshots/planner.png)
 
 ![Suggested timetables](.github/screenshots/suggest.png)
 
 <p align="center">
-  <img src=".github/screenshots/phone-overview.png" width="250" alt="Overview on a phone">
-  <img src=".github/screenshots/phone-planner.png" width="250" alt="Planner on a phone">
-  <img src=".github/screenshots/phone-gpa.png" width="250" alt="GPA on a phone">
+  <img src=".github/screenshots/phone-overview.png" width="200" alt="Overview on a phone">
+  <img src=".github/screenshots/phone-planner.png" width="200" alt="Planner on a phone">
+  <img src=".github/screenshots/phone-seats.png" width="200" alt="Seat alerts on a phone">
+  <img src=".github/screenshots/phone-gpa.png" width="200" alt="GPA on a phone">
 </p>
 
 ## Running it
@@ -37,6 +39,8 @@ npm run dev
 npm test
 ```
 
+Seat alerts run on a Cloudflare Worker in `seats/` (free plan). The dev server sends `/api` to it on port 8787. Setup and the API are in [seats/README.md](seats/README.md).
+
 ## Data
 
 | What | Where |
@@ -44,6 +48,7 @@ npm test
 | Degree checklist per batch | `src/data/programs/` |
 | Course titles, credits and prerequisites per catalog year | `src/data/courses/` |
 | Section list per term | `src/data/terms/` |
+| Live seat counts for watched departments | the Worker's database (`seats/`) |
 | Official PDFs | `public/docs/` |
 
 Section lists come from FCCU's public course catalog. A GitHub Action (`.github/workflows/catalog.yml`) checks for changes every 3 hours (current site does it every hour) and commits when something changed. To run it locally:
