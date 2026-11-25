@@ -60,7 +60,7 @@ function DegreeButton() {
       aria-label="Degree options"
       title="Degree options"
       onClick={() => ui.degree(true)}
-      className="grid size-10 place-items-center rounded-[12px] bg-surface text-fg-2 shadow-soft transition-colors hover:text-fg active:scale-[0.97] md:size-9 md:rounded-[10px]"
+      className="grid size-10 place-items-center rounded-[12px] bg-surface text-fg-2 shadow-soft transition-colors hover:text-fg press md:size-9 md:rounded-[10px]"
     >
       <Ellipsis className="size-[18px]" strokeWidth={1.75} />
     </button>

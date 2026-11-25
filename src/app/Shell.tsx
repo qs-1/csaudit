@@ -231,7 +231,7 @@ export function ScreenHeader({ eyebrow, title, actions, mobileActions }: { eyebr
         </div>
         <div className="flex shrink-0 items-center gap-1 pb-0.5">
           {mobileActions}
-          <button type="button" aria-label="Settings" onClick={() => ui.settings(true)} className="grid size-10 place-items-center rounded-[12px] bg-surface text-fg-2 shadow-soft active:scale-[0.97]">
+          <button type="button" aria-label="Settings" onClick={() => ui.settings(true)} className="grid size-10 place-items-center rounded-[12px] bg-surface text-fg-2 shadow-soft press">
             <Settings2 className="size-[18px]" strokeWidth={1.5} />
           </button>
         </div>

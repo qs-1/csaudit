@@ -43,7 +43,7 @@ export function WatchBell({ term, s, className }: { term: string; s: Sec; classN
       aria-label={`${on ? 'Stop watching' : 'Watch'} ${s.course} ${s.sec}`}
       onClick={(e) => { e.stopPropagation(); toggleWatch(term, s); }}
       className={cn(
-        'grid size-8 shrink-0 place-items-center rounded-[9px] transition-colors hover:bg-fg/[0.06] active:scale-[0.94]',
+        'grid size-8 shrink-0 place-items-center rounded-[9px] transition-colors hover:bg-fg/[0.06] press',
         on ? 'text-fg' : 'text-fg-3 hover:text-fg',
         className,
       )}

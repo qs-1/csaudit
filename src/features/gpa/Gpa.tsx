@@ -72,10 +72,10 @@ function History({ m, className }: { m: Model; className?: string }) {
             points={pts.map((p) => ({ label: shortTerm(p.term), value: p.cgpa, bar: p.gpa }))}
           />
         ) : <p className="py-10 text-center text-sm text-fg-3">No graded terms yet</p>}
-        <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1 pl-8 text-xs text-fg-3">
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-x-5 gap-y-1 text-xs text-fg-3">
           <span className="inline-flex items-center gap-2"><span className="h-[2px] w-3.5 rounded-full bg-done-ink" />Up</span>
           <span className="inline-flex items-center gap-2"><span className="h-[2px] w-3.5 rounded-full bg-doing-ink" />Down</span>
-          <span className="inline-flex items-center gap-2"><span className="h-2.5 w-1.5 rounded-[2px] bg-done/50" />Term GPA</span>
+          <span className="inline-flex items-center gap-2"><span className="h-2.5 w-1.5 rounded-[2px] bg-done/50" />Term</span>
           <span className="inline-flex items-center gap-2"><span className="w-3.5 border-t border-dashed border-fg-3" />Min</span>
         </div>
       </div>

@@ -132,6 +132,15 @@
 }
 
 @layer utilities {
+  /* Pressed: a tint of the control's own text colour over it. Nothing moves, so icon and label stay put. */
+  :where(.press) { position: relative; } /* zero specificity: a fixed or absolute control keeps its position */
+  .press { isolation: isolate; }
+  .press::after {
+    content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+    background: currentColor; opacity: 0; transition: opacity 0.15s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .press:active::after { opacity: 0.1; transition-duration: 0s; }
+
   .num { font-family: theme('fontFamily.mono'); font-variant-numeric: tabular-nums; }
   .tnum { font-variant-numeric: tabular-nums; }
   .display { letter-spacing: -0.02em; font-weight: 500; }

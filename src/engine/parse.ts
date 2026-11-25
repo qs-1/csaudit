@@ -16,6 +16,25 @@ const TERM_MARK = /Show\/Hide\s+(\d{4})\s+(Fall|Spring|Summer|Winter)/gi;
 const TOTALS =
   /Undergraduate Institutional Totals[^\d]*(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+([\d.]+)\s+([\d.]+)/i;
 const TIME = /^\d{1,2}:\d{2}\/\d{1,2}:\d{2}$/;
+const HAS_TIME = /\d{1,2}:\d{2}\/\d{1,2}:\d{2}/;
+
+/**
+ * The instructor: the words after the last meeting time, once the room ("SBLOCKS219", "TBD") is dropped and before
+ * any note ("START: 02/01/2027"). `tokens` ends before the grade. Undefined when nothing there reads as a name.
+ */
+function instructorIn(tokens: string[]): string | undefined {
+  let i = -1;
+  tokens.forEach((x, j) => { if (HAS_TIME.test(x)) i = j; });
+  if (i < 0) return undefined;
+  const words: string[] = [];
+  for (const x of tokens.slice(i + 1)) {
+    if (x.endsWith(':')) break;
+    if (/\d/.test(x) || /BLOCK/.test(x) || x === 'TBD') continue;
+    words.push(x);
+  }
+  const name = words.join(' ');
+  return /[a-z]/.test(name) ? name : undefined;
+}
 
 export function normalise(raw: string): string {
   return raw
@@ -40,15 +59,15 @@ const GRADE_POINTS: Record<string, number> = { A: 4, 'A-': 3.7, 'B+': 3.3, B: 3,
 
 /* The site's own "Copy as a table" output, pasted back in: tab-separated, one row per attempt, e.g.
    "2026 Spring\tCOMP 302\tTheory of Automata\tC-\t3\t3\t5.1\t". The grade reads "In progress" until one is posted, "Yes" in the
-   last column marks a replaced attempt, and an optional trailing Section column carries the section. A "*" title prefix is a lab.
+   last column marks a replaced attempt, and optional trailing Section and Instructor columns follow. A "*" title prefix is a lab.
    Matched on whitespace rather than tabs, so a paste that turned tabs into spaces still reads. */
-const TABLE_ROW = /^(\d{4})\s+(Fall|Spring|Summer|Winter)\s+([A-Z]{2,4}) ?(\d{3}[A-Z]?)\s+(.+?)\s+(In progress|[A-Z]{1,3}[+-]?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)(?:\s+(Yes))?(?:\s+([A-Z0-9]{1,3}))?$/i;
+const TABLE_ROW = /^(\d{4})\s+(Fall|Spring|Summer|Winter)\s+([A-Z]{2,4}) ?(\d{3}[A-Z]?)\s+(.+?)\s+(In progress|[A-Z]{1,3}[+-]?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)(?:\s+(Yes))?(?:\s+([A-Z0-9]{1,3}))?(?:\s+([A-Z][^\t]*\s[^\t]+|[A-Z][^\t\s]{3,}))?$/i;
 
 /** Rows as a tab-separated table ("Copy as a table", and the data inside a downloaded PDF). `parseTable` reads it back. */
 export function tableText(rows: Row[]): string {
   return [
-    ['Term', 'Code', 'Title', 'Grade', 'Attempted', 'Earned', 'Points', 'Replaced', 'Section'].join('\t'),
-    ...rows.map((r) => [r.term, r.code, (r.lab ? '*' : '') + r.title, r.ip ? 'In progress' : r.grade, r.att, r.ern, r.pts, r.rep ? 'Yes' : '', r.sec ?? ''].join('\t')),
+    ['Term', 'Code', 'Title', 'Grade', 'Attempted', 'Earned', 'Points', 'Replaced', 'Section', 'Instructor'].join('\t'),
+    ...rows.map((r) => [r.term, r.code, (r.lab ? '*' : '') + r.title, r.ip ? 'In progress' : r.grade, r.att, r.ern, r.pts, r.rep ? 'Yes' : '', r.sec ?? '', r.instructor ?? ''].join('\t').trimEnd()),
   ].join('\n');
 }
 
@@ -64,6 +83,7 @@ function parseTable(t: string): Transcript {
       term: `${m[1]} ${m[2]![0]!.toUpperCase()}${m[2]!.slice(1).toLowerCase()}`,
       code: `${m[3]!.toUpperCase()} ${m[4]!.toUpperCase()}`,
       ...(m[11] ? { sec: m[11].toUpperCase() } : {}),
+      ...(m[12] ? { instructor: m[12].trim() } : {}),
       title: title.replace(/^\*/, ''),
       lab: title.startsWith('*'),
       ip, grade, rep: !!m[10],
@@ -104,12 +124,14 @@ function parseSchedule(t: string, credits?: CreditLookup): Transcript {
     // Instructors are written "A Basharat"; a short all-caps last word that isn't a known grade is one we don't know.
     const last = tk[tk.length - 1]!;
     const odd = !g && tk.length > 2 && /^[A-Z]{1,2}[+-]?$/.test(last) ? last : undefined;
+    const instructor = instructorIn(tk.slice(0, g ? tk.length - (g[2] ? 2 : 1) : odd ? -1 : tk.length));
     const graded = grade in GRADE_POINTS;
     const n = credits?.(code, term) ?? FALLBACK_CREDITS;
     // The transcript's own numbers win over the lookup; an unknown grade with credits beside it still isn't "in progress".
     const own = cr && (g || odd) ? { att: +cr[1]!, ern: +cr[2]!, pts: +cr[3]! } : null;
     rows.push({
       term, code, sec: m[5]!, title: rawTitle.replace(/^\*/, ''), lab: rawTitle.startsWith('*'),
+      ...(instructor ? { instructor } : {}),
       ip: !g && !odd, grade, rep: !!g?.[2],
       ...(own ?? {
         att: graded ? n : 0,
@@ -155,10 +177,13 @@ export function parseTranscript(raw: string, credits?: CreditLookup): Transcript
       const tail = c.join(' ').match(GRADE_TAIL);
       const odd = tail ? null : c.join(' ').match(ODD_TAIL);
       const rawTitle = c.slice(3, en).join(' ');
+      const cut = tail ?? odd;
+      const instructor = instructorIn(cut ? c.join(' ').slice(0, cut.index).split(' ') : c);
       rows.push({
         term,
         code: `${c[0]} ${c[1]}`,
         sec: c[2]!,
+        ...(instructor ? { instructor } : {}),
         title: rawTitle.replace(/^\*/, ''),
         lab: rawTitle.startsWith('*'),
         ip: !tail,

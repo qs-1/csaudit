@@ -3,7 +3,7 @@ import catalog from '../src/data/programs/cs-2023-24.json';
 import catalog26 from '../src/data/programs/cs-2026-27.json';
 import { audit, creditChanges, matchSlots } from '../src/engine/audit';
 import { applyRetakes, gradeHint, replacedByIp, retakeOptions, solveTarget, stats, termSeries } from '../src/engine/gpa';
-import { isScheduleTranscript, linesFromItems, parseTranscript, selfCheck } from '../src/engine/parse';
+import { isScheduleTranscript, linesFromItems, parseTranscript, selfCheck, tableText } from '../src/engine/parse';
 import { autofill, clash, coverage, explainNone, groupByCourse, isLabSection, labCourses, loadOf, roleContext, unfit, zoneFor } from '../src/engine/plan';
 import { notices } from '../src/engine/notices';
 import { decodePlan, encodePlan, icsFor, termStartGuess } from '../src/engine/share';
@@ -88,6 +88,8 @@ describe('parser', () => {
       '2023 Fall|WRCM 101|Writing and Communication I|B|3', // unknown to the lookup: 3
     ]);
     expect(t.totals).toEqual({ att: 13, ern: 13, pts: 42 });
+    expect(t.rows.map((r) => r.instructor)).toEqual(['X Teacher', 'Y Teacher', 'Z Teacher', 'W Teacher', 'V Teacher', 'U Teacher', 'T Teacher']);
+    expect(parseTranscript(tableText(t.rows)).rows.map((r) => [r.sec, r.instructor])).toEqual(t.rows.map((r) => [r.sec, r.instructor]));
     expect(selfCheck(t)).toEqual([]);
     expect(isScheduleTranscript(paste(MAIN))).toBe(false);
   });

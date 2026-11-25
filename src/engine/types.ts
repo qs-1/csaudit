@@ -4,6 +4,7 @@ export interface Row {
   term: string; // "2025 Fall"
   code: string; // "COMP 102"
   sec?: string; // "B"; lets a registered course be found in the term's section list
+  instructor?: string; // "A Basharat", as the transcript prints it
   title: string;
   lab: boolean; // title carried the "*" prefix
   ip: boolean; // in progress (no grade yet)

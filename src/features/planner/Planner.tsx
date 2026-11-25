@@ -331,7 +331,7 @@ function MobilePlanner({ m }: { m: Model }) {
         mobileActions={
           <Menu.Root>
             <Menu.Trigger asChild>
-              <button type="button" aria-label="More" className="grid size-10 place-items-center rounded-[12px] bg-surface text-fg-2 shadow-soft active:scale-[0.97]">
+              <button type="button" aria-label="More" className="grid size-10 place-items-center rounded-[12px] bg-surface text-fg-2 shadow-soft press">
                 <MoreHorizontal className="size-[18px]" strokeWidth={1.75} />
               </button>
             </Menu.Trigger>
@@ -419,7 +419,7 @@ function MobilePlanner({ m }: { m: Model }) {
           type="button"
           onClick={() => { setTyping(true); setSearch(true); }}
           aria-label="Search courses"
-          className="fixed right-4 z-30 flex h-11 items-center gap-2 rounded-full bg-fg pl-3.5 pr-4 text-base font-medium text-bg shadow-[0_8px_24px_-6px_rgb(0_0_0/0.35)] transition-transform active:scale-[0.96]"
+          className="fixed right-4 z-30 flex h-11 items-center gap-2 rounded-full bg-fg pl-3.5 pr-4 text-base font-medium text-bg shadow-[0_8px_24px_-6px_rgb(0_0_0/0.35)] transition-transform press"
           style={{ bottom: 'calc(78px + var(--safe-b))' }}
         >
           <Search className="size-[18px]" strokeWidth={2} />

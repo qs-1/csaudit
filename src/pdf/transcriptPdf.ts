@@ -36,7 +36,8 @@ const roundRect = (x: number, y: number, w: number, h: number, r: number) => {
   return `M${x + r} ${y}H${x + w - r}A${r} ${r} 0 0 1 ${x + w} ${y + r}V${y + h - r}A${r} ${r} 0 0 1 ${x + w - r} ${y + h}H${x + r}A${r} ${r} 0 0 1 ${x} ${y + h - r}V${y + r}A${r} ${r} 0 0 1 ${x + r} ${y}Z`;
 };
 
-export async function downloadTranscriptPdf(m: Model) {
+/** `who`: each row's instructor, where known. */
+export async function downloadTranscriptPdf(m: Model, who: (r: Row) => string | undefined = (r) => r.instructor) {
   const dark = document.documentElement.classList.contains('dark');
   const c = {
     bg: token('--bg'), surface: token('--surface'), fg: token('--fg'), fg2: token('--fg-2'), fg3: token('--fg-3'),
@@ -51,7 +52,7 @@ export async function downloadTranscriptPdf(m: Model) {
     ([[sansUrl, true], [sansMediumUrl, true], [monoUrl, false]] as const).map(async ([u, subset]) => doc.embedFont(await bytes(u), { subset })),
   ) as [PDFFont, PDFFont, PDFFont];
 
-  const rows = m.transcript.rows;
+  const rows = m.transcript.rows.map((r) => { const i = who(r); return i ? { ...r, instructor: i } : r; });
   const terms = sortTerms([...new Set(rows.map((r) => r.term))]).reverse();
   const made = new Date();
 
@@ -92,8 +93,6 @@ export async function downloadTranscriptPdf(m: Model) {
     }
     shape(roundRect(M, top, CW, h, 18), { color: c.surface });
   };
-  const check = (x: number, y: number, ink: Ink) =>
-    page.drawSvgPath(`M${x} ${y + 4}L${x + 3} ${y + 7}L${x + 9} ${y}`, { x: 0, y: H, borderColor: ink.color, borderWidth: 1.2, borderOpacity: ink.opacity ?? 1 });
 
   const gradeInk = (r: Row): Ink => {
     if (r.ip) return { color: c.fg3 };
@@ -125,10 +124,6 @@ export async function downloadTranscriptPdf(m: Model) {
     text(label, lx + i * 74, sumTop + PAD + 78, 9, sans, { color: c.fg3 });
     text(value, lx + i * 74, sumTop + PAD + 100, 18, medium, { color: c.fg });
   });
-  if (m.transcript.totals && !m.problems.length) {
-    check(lx, sumTop + sumH - PAD - 9, { color: c.fg3 });
-    text("Matches the transcript's own totals", lx + 15, sumTop + sumH - PAD - 1, 8.5, sans, { color: c.fg3 });
-  }
 
   // Right: every term's GPA as a bar, newest first, as on the Transcript page.
   const rx = M + 230;
@@ -180,7 +175,11 @@ export async function downloadTranscriptPdf(m: Model) {
       const fade = r.rep ? 0.45 : 1;
       text(r.code || '—', x, base, 8.5, mono, { color: c.fg2, opacity: fade });
       const tx = x + 70;
-      const title = fit(r.title || 'Untitled', sans, 10, right - 76 - tx);
+      // The instructor sits right-aligned before the credits, muted; the title gets what's left.
+      const ix = right - 56;
+      const inst = r.instructor ? fit(r.instructor, sans, 8.5, 120) : '';
+      if (inst) text(inst, ix, base, 8.5, sans, { color: c.fg3, opacity: fade }, 'right');
+      const title = fit(r.title || 'Untitled', sans, 10, (inst ? ix - sans.widthOfTextAtSize(inst, 8.5) - 14 : right - 76) - tx);
       const tw = text(title, tx, base, 10, sans, { color: c.fg, opacity: fade });
       if (r.rep) page.drawLine({ start: { x: tx, y: H - base + 3.4 }, end: { x: tx + tw, y: H - base + 3.4 }, thickness: 0.6, color: c.fg3 });
       const cr = r.att || r.ern;

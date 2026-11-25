@@ -70,7 +70,7 @@ function MoreMenu({ mobile }: { mobile?: boolean }) {
         <button
           type="button"
           aria-label="More"
-          className={cn('grid place-items-center text-fg-2', mobile ? 'size-10 rounded-[12px] bg-surface shadow-soft active:scale-[0.97]' : 'size-9 rounded-[10px] hover:bg-surface-2 hover:text-fg')}
+          className={cn('grid place-items-center text-fg-2', mobile ? 'size-10 rounded-[12px] bg-surface shadow-soft press' : 'size-9 rounded-[10px] hover:bg-surface-2 hover:text-fg')}
         >
           <MoreHorizontal className="size-[18px]" strokeWidth={1.75} />
         </button>
@@ -126,7 +126,7 @@ function CourseWatchRow({ w, secs }: { w: Watch; secs: Section[] }) {
           type="button"
           aria-label={`Stop watching ${w.course} for new sections`}
           onClick={() => toggleCourseWatch(w.term, w.course)}
-          className="-mr-2 grid size-8 shrink-0 place-items-center rounded-[9px] text-fg transition-colors hover:bg-fg/[0.06] active:scale-[0.94]"
+          className="-mr-2 grid size-8 shrink-0 place-items-center rounded-[9px] text-fg transition-colors hover:bg-fg/[0.06] press"
         >
           <Bell className="size-4" strokeWidth={1.75} fill="currentColor" />
         </button>
@@ -461,7 +461,7 @@ function Page({ p }: { p: PlanState | null }) {
           <button
             type="button"
             onClick={() => setAdding(true)}
-            className="fixed right-4 z-30 flex h-11 items-center gap-2 rounded-full bg-fg pl-3.5 pr-4 text-base font-medium text-bg shadow-[0_8px_24px_-6px_rgb(0_0_0/0.35)] transition-transform active:scale-[0.96]"
+            className="fixed right-4 z-30 flex h-11 items-center gap-2 rounded-full bg-fg pl-3.5 pr-4 text-base font-medium text-bg shadow-[0_8px_24px_-6px_rgb(0_0_0/0.35)] transition-transform press"
             style={{ bottom: 'calc(78px + var(--safe-b))' }}
           >
             <Plus className="size-[18px]" strokeWidth={2} />

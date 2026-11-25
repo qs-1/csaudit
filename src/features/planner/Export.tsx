@@ -4,7 +4,7 @@ import { encodePlan, icsFor, isUnscheduled, termStartGuess } from '@/engine';
 import { plural } from '@/lib/utils';
 import type { Model } from '@/state/model';
 import { Button } from '@/ui/button';
-import { Input, Stepper } from '@/ui/controls';
+import { DateField, Stepper } from '@/ui/controls';
 import { Sheet } from '@/ui/sheet';
 import type { PlanState } from './usePlan';
 
@@ -60,11 +60,11 @@ export function CalendarSheet({ m, p, open, onOpenChange }: { m: Model; p: PlanS
           Every class as a weekly event with its room, {plural(timed.length, 'course')} in all.
           {untimed ? ` ${plural(untimed, 'course')} with no published time ${untimed === 1 ? 'is' : 'are'} left out.` : ''}
         </p>
-        <label className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2">
           <span className="text-sm text-fg-2">First day of classes</span>
-          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="num" />
+          <DateField label="First day of classes" value={date} onChange={setDate} />
           <span className="text-xs text-fg-3">A guess. Check FCCU's academic calendar.</span>
-        </label>
+        </div>
         <div className="flex items-center justify-between gap-3">
           <span className="text-sm text-fg-2">Weeks of classes</span>
           <Stepper label="Weeks of classes" value={weeks} min={1} max={20} onChange={setWeeks} />

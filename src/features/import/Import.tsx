@@ -165,7 +165,7 @@ export function Import() {
           <button
             type="button"
             onClick={() => { actions.planOnly(); go('planner'); }}
-            className="flex w-full items-center gap-3 rounded-card border border-line px-4 py-3.5 text-left transition-colors hover:bg-fg/[0.03] active:scale-[0.99] md:pb-3.5"
+            className="flex w-full items-center gap-3 rounded-card border border-line px-4 py-3.5 text-left transition-colors hover:bg-fg/[0.03] press md:pb-3.5"
           >
             <CalendarRange className="size-5 shrink-0 text-fg-2" strokeWidth={1.5} />
             <span className="min-w-0 flex-1">

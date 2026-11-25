@@ -1,10 +1,10 @@
 import * as Menu from '@radix-ui/react-dropdown-menu';
 import { AlertTriangle, Check, Copy, Ellipsis, FileDown, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { ScreenHeader } from '@/app/Shell';
-import { GP, GRADES, sortTerms, tableText, termLabel, type Row } from '@/engine';
+import { GP, GRADES, parseTranscript, sortTerms, tableText, termLabel, type Row } from '@/engine';
 import { cn, num } from '@/lib/utils';
 import { useModel, type Model } from '@/state/model';
 import { actions, regrade, useStore } from '@/state/store';
@@ -16,21 +16,39 @@ import { Sheet } from '@/ui/sheet';
 
 const ALL_GRADES = [...GRADES, 'P', 'W', 'NP', 'I'];
 
+/**
+ * Each row's instructor. Rows read before instructors were kept get theirs from the transcript text saved at import,
+ * and courses registered this term from its section list.
+ */
+function useInstructors(m: Model | null) {
+  const raw = useStore((s) => s.transcriptText);
+  return useMemo(() => {
+    const by = new Map<string, string>();
+    const k = (term: string, code: string, sec?: string) => `${term}|${code}|${sec ?? ''}`;
+    try {
+      for (const r of raw ? parseTranscript(raw).rows : []) if (r.instructor) by.set(k(r.term, r.code, r.sec), r.instructor);
+    } catch { /* an old paste that no longer reads: no instructors from it */ }
+    for (const s of m?.registered ?? []) if (s.instructor) by.set(k(m!.termEntry.key, s.course, s.sec), s.instructor);
+    return (r: Row) => r.instructor ?? by.get(k(r.term, r.code, r.sec));
+  }, [raw, m?.registered, m?.termEntry.key]); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
 export function TranscriptScreen() {
   const m = useModel();
   const [editing, setEditing] = useState<number | null>(null);
+  const who = useInstructors(m);
   if (!m) return null;
   const rows = m.transcript.rows;
   const terms = sortTerms([...new Set(rows.map((r) => r.term))]).reverse();
 
   const copy = () => {
-    navigator.clipboard.writeText(tableText(rows)).then(() => toast.success('Copied as a table'), () => toast.error('Copy failed'));
+    navigator.clipboard.writeText(tableText(rows.map((r) => ({ ...r, instructor: who(r) })))).then(() => toast.success('Copied as a table'), () => toast.error('Copy failed'));
   };
   // pdf-lib and the fonts only load when a PDF is asked for.
   const pdf = () => {
     const id = toast.loading('Making the PDF');
     import('@/pdf/transcriptPdf')
-      .then(({ downloadTranscriptPdf }) => downloadTranscriptPdf(m))
+      .then(({ downloadTranscriptPdf }) => downloadTranscriptPdf(m, who))
       .then(() => toast.success('Transcript downloaded', { id, description: 'Choose it on the start screen to load this transcript again.' }))
       .catch(() => toast.error('Could not make the PDF', { id }));
   };
@@ -53,7 +71,7 @@ export function TranscriptScreen() {
         }
         mobileActions={
           <>
-            <button type="button" aria-label="Add course" onClick={add} className="grid size-10 place-items-center rounded-[12px] bg-fg text-bg active:scale-[0.97]">
+            <button type="button" aria-label="Add course" onClick={add} className="grid size-10 place-items-center rounded-[12px] bg-fg text-bg press">
               <Plus className="size-[18px]" strokeWidth={1.75} />
             </button>
             <MoreMenu copy={copy} pdf={pdf} />
@@ -97,7 +115,7 @@ export function TranscriptScreen() {
                         <Code className="hidden w-[84px] shrink-0 text-[13px] text-fg-2 md:block">{r.code || '—'}</Code>
                         <div className="min-w-0 flex-1">
                           <p className={cn('truncate text-base', r.rep && 'line-through decoration-fg-3')}>{r.title || 'Untitled'}</p>
-                          <p className="num text-xs text-fg-3 md:hidden">{r.code || '—'}</p>
+                          <p className="truncate text-xs text-fg-3"><span className="num md:hidden">{r.code || '—'}{who(r) ? ' · ' : ''}</span>{who(r)}</p>
                           {r.rep ? <p className="text-xs text-fg-3">Replaced by a later attempt</p> : null}
                           {r.odd && !r.rep ? <p className="text-xs text-warn">Grade not recognised, counted as in progress</p> : null}
                           {retakeOf(m, r) ? <p className="text-xs text-fg-2">Retake: replaces the {retakeOf(m, r)!.replaces}, adds no credits</p> : null}

@@ -4,7 +4,7 @@ import { forwardRef, type ButtonHTMLAttributes } from 'react';
 import { cn } from '@/lib/utils';
 
 export const buttonStyles = cva(
-  'inline-flex shrink-0 select-none items-center justify-center gap-2 whitespace-nowrap rounded-lg font-medium transition-[background-color,color,box-shadow,transform,opacity] duration-150 ease-out active:scale-[0.98] disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-4 [&_svg]:shrink-0',
+  'inline-flex shrink-0 select-none items-center justify-center gap-2 whitespace-nowrap rounded-lg font-medium transition-[background-color,color,box-shadow,opacity] duration-150 ease-out press disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-4 [&_svg]:shrink-0',
   {
     variants: {
       variant: {
@@ -14,7 +14,7 @@ export const buttonStyles = cva(
         quiet: 'bg-surface-2 text-fg hover:bg-surface-3',
         ghost: 'text-fg-2 hover:bg-surface-2 hover:text-fg',
         danger: 'bg-surface text-bad shadow-card hover:bg-bad/[0.06]',
-        link: 'h-auto rounded-md px-0 text-fg-2 hover:text-fg active:scale-100',
+        link: 'h-auto rounded-md px-0 text-fg-2 hover:text-fg',
       },
       size: {
         sm: 'h-8 px-3 text-sm',

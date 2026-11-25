@@ -2,7 +2,7 @@ import { PROGRAMS } from '@/data/registry';
 import type { Model } from '@/state/model';
 import { actions, useStore } from '@/state/store';
 import { ui, useUI } from '@/state/ui';
-import { Stepper, SwitchRow } from '@/ui/controls';
+import { Select, Stepper, SwitchRow } from '@/ui/controls';
 import { PanelSection } from '@/features/settings/Settings';
 import { Sheet } from '@/ui/sheet';
 
@@ -25,15 +25,16 @@ export function DegreePanel({ m }: { m: Model }) {
       <div className="divide-y divide-line/70">
         {PROGRAMS.length > 1 ? (
           <PanelSection title="Checklist">
-            <select
-              aria-label="Degree checklist"
-              className="h-10 w-full rounded-xl border border-line bg-surface px-3 text-base"
+            <Select
+              label="Degree checklist"
+              className="w-full"
               value={programId ?? ''}
-              onChange={(e) => actions.setProgram(e.target.value || null)}
-            >
-              <option value="">Detect from transcript ({catalog.label})</option>
-              {PROGRAMS.map((p) => <option key={p.id} value={p.id}>{p.label} · {p.catalogYear}</option>)}
-            </select>
+              onChange={(v) => actions.setProgram(v || null)}
+              options={[
+                { value: '', label: 'Detect from transcript', detail: catalog.label },
+                ...PROGRAMS.map((p) => ({ value: p.id, label: p.label, detail: `${p.catalogYear} checklist` })),
+              ]}
+            />
           </PanelSection>
         ) : null}
 
@@ -57,15 +58,13 @@ export function DegreePanel({ m }: { m: Model }) {
                 <p className="text-base">Specialization</p>
                 <p className="text-sm text-fg-3">Optional. Counts electives from the chosen cluster.</p>
               </div>
-              <select
-                aria-label="Specialization"
-                className="h-10 rounded-xl border border-line bg-surface px-3 text-base"
+              <Select
+                label="Specialization"
+                className="max-w-[55%]"
                 value={catalog.tracks.some((t) => t.id === as.track) ? as.track! : ''}
-                onChange={(e) => actions.assume({ track: e.target.value || null })}
-              >
-                <option value="">None</option>
-                {catalog.tracks.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-              </select>
+                onChange={(v) => actions.assume({ track: v || null })}
+                options={[{ value: '', label: 'None' }, ...catalog.tracks.map((t) => ({ value: t.id, label: t.label }))]}
+              />
             </div>
           ) : null}
           {catalog.deficiency.length ? (
