@@ -26,7 +26,7 @@ export default defineConfig({
       },
     }),
   ],
-  // The seats Worker in development (cd seats && npm run dev). In production vercel.json proxies /api.
+  // The seats Worker in development (cd seats && npm run dev). In production middleware.ts proxies /api.
   server: { proxy: { '/api': 'http://127.0.0.1:8787' } },
   preview: { proxy: { '/api': 'http://127.0.0.1:8787' } },
   resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },

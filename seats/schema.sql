@@ -1,5 +1,5 @@
 -- Seat alerts database (Cloudflare D1). Apply with: npx wrangler d1 execute fccu-seats --remote --file schema.sql
--- Nothing here identifies a person: a device is a random id, a secret's hash and, when allowed, a push address.
+-- No names, emails or addresses: a device is a random id, a secret's hash and, when allowed, a push address.
 
 CREATE TABLE IF NOT EXISTS devices (
   id TEXT PRIMARY KEY,               -- random, shown to nobody
@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS outbox (
 -- Poller state, and each term's latest seat counts as one row (live:<term>).
 CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL);
 
--- New devices per address per day, hashed with a daily salt.
+-- New devices per address per day. The address is hashed with the day and a secret, and kept 2 days.
 CREATE TABLE IF NOT EXISTS signups (who TEXT NOT NULL, day TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (who, day));
 
 -- What the poller did, kept 7 days, for debugging.

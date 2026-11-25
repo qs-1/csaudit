@@ -1,4 +1,4 @@
-// Seat alerts: talks to the seats Worker (seats/) through the site's own /api, which vercel.json proxies.
+// Seat alerts: talks to the seats Worker (seats/) through the site's own /api, which middleware.ts proxies.
 //
 // A device is a random id and secret kept in localStorage (the transcript stays in session storage; this holds no
 // personal data). Push is optional: without it the Seats screen still shows each watch's live count.

@@ -1,3 +1,5 @@
 VAPID_PUBLIC=
 VAPID_JWK=
 SITE=http://localhost:5199
+# Leave unset locally. In production it's the secret the site's proxy sends (middleware.ts).
+# PROXY_KEY=

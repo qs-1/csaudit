@@ -11,6 +11,7 @@ export interface Env {
   VAPID_PUBLIC: string;
   VAPID_JWK: string; // secret: the private key as a JWK
   VAPID_SUBJECT: string;
+  PROXY_KEY?: string; // secret: sent by the site's proxy (middleware.ts); unset in local development
 }
 
 const PUSH_MAX = 25; // pushes per run (~4 ms CPU and 25 requests)
@@ -136,7 +137,8 @@ export async function cleanup(db: D1Database, now: number) {
     db.prepare('DELETE FROM events WHERE t < ?').bind(now - 7 * 24 * 60 * MIN),
     db.prepare('DELETE FROM watches WHERE expires <= ?').bind(now),
     // Devices nobody has opened in 30 days and that watch nothing.
-    db.prepare('DELETE FROM devices WHERE seen < ? AND id NOT IN (SELECT device FROM watches)').bind(now - 30 * 24 * 60 * MIN),
+    // A device with nothing watched and no visit in 3 days goes. The app starts a new one if it comes back.
+    db.prepare('DELETE FROM devices WHERE seen < ? AND id NOT IN (SELECT device FROM watches)').bind(now - 3 * 24 * 60 * MIN),
     db.prepare('DELETE FROM signups WHERE day < ?').bind(new Date(now - 2 * 24 * 60 * MIN).toISOString().slice(0, 10)),
   ]);
 }

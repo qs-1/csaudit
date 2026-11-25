@@ -1,7 +1,7 @@
 # Seat alerts
 
 A Cloudflare Worker that polls FCCU's course catalog for watched departments once a minute and sends a web push
-when a full section opens. The site proxies `/api/*` to it (`vercel.json`).
+when a full section opens. The site proxies `/api/*` to it (`middleware.ts`), adding a key the Worker requires.
 
 | file | |
 |---|---|

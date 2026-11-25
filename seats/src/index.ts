@@ -1,4 +1,4 @@
-// Seat alerts for the FCCU planner. The site proxies /api/* here (vercel.json), so the app stays same-origin.
+// Seat alerts for the FCCU planner. The site proxies /api/* here (middleware.ts), so the app stays same-origin.
 //
 // No accounts: a device is a random id plus a secret the app keeps in localStorage. Push is optional; a device
 // without it still sees its watches update in the app.
@@ -10,8 +10,9 @@ import { send } from './webpush';
 
 const WATCHES_MAX = 15;
 const WATCH_DAYS = 45;
-const SIGNUPS_PER_DAY = 200; // per network: a campus shares one address, so this only stops scripts
+const SIGNUPS_PER_DAY = 1000; // per address: a campus network shares one, so this only stops scripts
 const DEVICES_MAX = 20_000;
+const SEEN_EVERY = 60 * MIN; // a device's last-seen time is written at most this often
 
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...headers } });
@@ -49,20 +50,37 @@ async function auth(req: Request, env: Env): Promise<Device | null> {
   const m = /^Bearer ([0-9a-f]{32})\.([0-9a-f]{64})$/.exec(req.headers.get('Authorization') ?? '');
   if (!m) return null;
   const d = await env.DB.prepare('SELECT id, endpoint, push_dead, admin FROM devices WHERE id = ? AND secret = ?').bind(m[1], await sha256(m[2]!)).first<Device>();
-  if (d) await env.DB.prepare('UPDATE devices SET seen = ? WHERE id = ?').bind(Date.now(), d.id).run();
+  const now = Date.now();
+  if (d) await env.DB.prepare('UPDATE devices SET seen = ? WHERE id = ? AND seen < ?').bind(now, d.id, now - SEEN_EVERY).run();
   return d;
 }
 
 interface SubBody { endpoint?: unknown; keys?: { p256dh?: unknown; auth?: unknown } }
-/** A push subscription from the browser, or null. Only https endpoints, with keys of the right shape. */
+// The browsers' push services. Any other address is refused, so the Worker can't be pointed at someone else's site.
+const PUSH_HOSTS = /^(fcm\.googleapis\.com|updates\.push\.services\.mozilla\.com|web\.push\.apple\.com|[a-z0-9-]+\.notify\.windows\.com)$/;
+
+/** A push subscription from the browser, or null. Only https endpoints at a known push service, with keys of the right shape. */
 function parseSub(b: SubBody | null | undefined): { endpoint: string; p256dh: string; auth: string } | null {
   if (!b || typeof b.endpoint !== 'string' || typeof b.keys?.p256dh !== 'string' || typeof b.keys?.auth !== 'string') return null;
-  if (!/^https:\/\/[^\s]{10,800}$/.test(b.endpoint)) return null;
+  if (!/^https:\/\/[^\s]{10,800}$/.test(b.endpoint) || !PUSH_HOSTS.test(new URL(b.endpoint).hostname)) return null;
   if (!/^[A-Za-z0-9_-]{80,100}$/.test(b.keys.p256dh) || !/^[A-Za-z0-9_-]{16,32}$/.test(b.keys.auth)) return null;
   return { endpoint: b.endpoint, p256dh: b.keys.p256dh, auth: b.keys.auth };
 }
 
-const clientIp = (req: Request) => req.headers.get('x-real-ip') ?? req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? req.headers.get('cf-connecting-ip') ?? 'unknown';
+/**
+ * The visitor's address. In production every request comes through the site's proxy (middleware.ts), which sends the
+ * address Vercel saw; fetch() refuses requests without the proxy's key, so this header can't be made up. Locally there
+ * is no proxy and no key.
+ */
+const clientIp = (req: Request, env: Env) => (env.PROXY_KEY ? req.headers.get('x-client-ip') : req.headers.get('cf-connecting-ip')) || 'unknown';
+
+/** Whether the request came through the site's proxy. Always true when no key is set (local development). */
+function fromProxy(req: Request, env: Env): boolean {
+  if (!env.PROXY_KEY) return true;
+  const a = new TextEncoder().encode(req.headers.get('x-proxy-key') ?? '');
+  const b = new TextEncoder().encode(env.PROXY_KEY);
+  return a.byteLength === b.byteLength && crypto.subtle.timingSafeEqual(a, b);
+}
 
 async function createDevice(req: Request, env: Env) {
   const body = await req.json<{ sub?: SubBody }>().catch(() => null);
@@ -71,16 +89,9 @@ async function createDevice(req: Request, env: Env) {
   const now = Date.now();
   const id = randomId(16);
   const secret = randomId(32);
-  if (sub) {
-    // The same browser subscribing again (cleared storage, new install): keep its watches, issue a new secret.
-    const old = await env.DB.prepare('SELECT id FROM devices WHERE endpoint = ?').bind(sub.endpoint).first<{ id: string }>();
-    if (old) {
-      await env.DB.prepare('UPDATE devices SET secret = ?, p256dh = ?, auth = ?, push_dead = NULL, seen = ? WHERE id = ?').bind(await sha256(secret), sub.p256dh, sub.auth, now, old.id).run();
-      return json({ id: old.id, secret });
-    }
-  }
   const day = new Date(now).toISOString().slice(0, 10);
-  const who = await sha256(`${clientIp(req)}|${day}|${env.VAPID_PUBLIC}`);
+  // Salted with a secret, so the stored hash can't be turned back into an address by trying them all.
+  const who = await sha256(`${clientIp(req, env)}|${day}|${env.VAPID_JWK}`);
   const [count, mine] = await env.DB.batch([
     env.DB.prepare('SELECT COUNT(*) AS n FROM devices'),
     env.DB.prepare('SELECT n FROM signups WHERE who = ? AND day = ?').bind(who, day),
@@ -88,6 +99,9 @@ async function createDevice(req: Request, env: Env) {
   if (((count!.results[0] as { n: number }).n) >= DEVICES_MAX) return fail(503, 'Seat alerts are full right now');
   if (((mine!.results[0] as { n: number } | undefined)?.n ?? 0) >= SIGNUPS_PER_DAY) return fail(429, 'Too many new devices from this network today. Try tomorrow.');
   await env.DB.batch([
+    // The same browser subscribing again (cleared storage, new install) is a new device: its old row gives up the
+    // address and keeps its watches. Knowing an address is not enough to take over the watches behind it.
+    env.DB.prepare('UPDATE devices SET endpoint = NULL, p256dh = NULL, auth = NULL WHERE endpoint = ?').bind(sub?.endpoint ?? null),
     env.DB.prepare('INSERT INTO devices (id, secret, endpoint, p256dh, auth, created, seen) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(id, await sha256(secret), sub?.endpoint ?? null, sub?.p256dh ?? null, sub?.auth ?? null, now, now),
     env.DB.prepare('INSERT INTO signups (who, day, n) VALUES (?, ?, 1) ON CONFLICT (who, day) DO UPDATE SET n = n + 1').bind(who, day),
   ]);
@@ -201,9 +215,15 @@ async function removeWatch(req: Request, env: Env, d: Device) {
   return listWatches(env, d);
 }
 
+// The last answer per term, kept for 20 seconds in this isolate, so a busy minute reads the database once.
+const seatsCache = new Map<string, { at: number; body: unknown }>();
+
 /** Fresh counts for every section the poller has checked lately, for the planner to show instead of hourly ones. */
 async function liveSeats(env: Env, term: string | null) {
   if (!term || !/^\d{4}[A-Z]{2}$/.test(term)) return fail(400, 'Which term?');
+  const hit = seatsCache.get(term);
+  const headers = { 'Cache-Control': 'public, max-age=20, s-maxage=30' };
+  if (hit && Date.now() - hit.at < 20_000) return json(hit.body, 200, headers);
   const since = Date.now() - FRESH;
   const out: [string, string, number, number, number][] = [];
   for (const d of Object.values(await termCounts(env, term))) {
@@ -213,7 +233,10 @@ async function liveSeats(env: Env, term: string | null) {
       out.push([course, sec, avail, cap, d.at]);
     }
   }
-  return json({ term, seats: out }, 200, { 'Cache-Control': 'public, max-age=20, s-maxage=30' });
+  const body = { term, seats: out };
+  if (seatsCache.size > 8) seatsCache.clear();
+  seatsCache.set(term, { at: Date.now(), body });
+  return json(body, 200, headers);
 }
 
 /** Admin only: one whole-term GetList, to see in the logs whether it fits the CPU limit. */
@@ -231,6 +254,7 @@ export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     const route = `${req.method} ${url.pathname.replace(/\/+$/, '')}`;
+    if (!fromProxy(req, env)) return fail(403, 'Use csaudit.vercel.app');
     try {
       if (route === 'GET /api/config') return json({ vapid: env.VAPID_PUBLIC }, 200, { 'Cache-Control': 'public, max-age=3600' });
       if (route === 'GET /api/seats') return await liveSeats(env, url.searchParams.get('term'));

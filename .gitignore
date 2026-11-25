@@ -15,3 +15,5 @@ scripts/raw/seattime-*
 # Worker local secrets and state
 seats/.dev.vars
 seats/.wrangler/
+.vercel
+.env*

@@ -1,10 +1,4 @@
 {
-  "rewrites": [
-    {
-      "source": "/api/:path*",
-      "destination": "https://fccu-seats.qasimsuhail1.workers.dev/api/:path*"
-    }
-  ],
   "headers": [
     {
       "source": "/(.*)",

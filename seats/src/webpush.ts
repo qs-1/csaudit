@@ -89,7 +89,7 @@ export async function send(v: Vapid, sub: PushSub, message: unknown, o: PushOpti
     Urgency: o.urgency,
   };
   if (o.topic) headers.Topic = o.topic.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32);
-  const res = await fetch(sub.endpoint, { method: 'POST', headers, body, signal: AbortSignal.timeout(10_000) });
+  const res = await fetch(sub.endpoint, { method: 'POST', headers, body, redirect: 'manual', signal: AbortSignal.timeout(10_000) });
   await res.body?.cancel();
   return res.status;
 }
