@@ -21,17 +21,13 @@ const SESSION_MAX_AGE = 6 * 60 * MIN;
 
 export const vapid = (env: Env): Vapid => ({ publicKey: env.VAPID_PUBLIC, jwk: JSON.parse(env.VAPID_JWK), subject: env.VAPID_SUBJECT });
 
-async function kvGet<T>(db: D1Database, keys: string[]): Promise<Record<string, T>> {
-  const { results } = await db.prepare(`SELECT k, v FROM kv WHERE k IN (${keys.map(() => '?').join(',')})`).bind(...keys).all<{ k: string; v: string }>();
-  return Object.fromEntries(results.map((r) => [r.k, JSON.parse(r.v) as T]));
-}
 const kvPut = (db: D1Database, k: string, v: unknown) => db.prepare('INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v').bind(k, JSON.stringify(v));
 const logEvent = (db: D1Database, now: number, kind: string, detail: unknown) => db.prepare('INSERT INTO events (t, kind, detail) VALUES (?, ?, ?)').bind(now, kind, JSON.stringify(detail));
 
 /** Only one run talks to Empower at a time, even if a slow run spills into the next minute. */
 async function lock(db: D1Database, now: number): Promise<boolean> {
-  await db.prepare("INSERT OR IGNORE INTO kv (k, v) VALUES ('lock', '0')").run();
-  const r = await db.prepare("UPDATE kv SET v = ? WHERE k = 'lock' AND CAST(v AS INTEGER) < ?").bind(String(now + 90_000), now).run();
+  const r = await db.prepare("INSERT INTO kv (k, v) VALUES ('lock', ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v WHERE CAST(kv.v AS INTEGER) < ?")
+    .bind(String(now + 90_000), now).run();
   return r.meta.changes === 1;
 }
 const unlock = (db: D1Database) => db.prepare("UPDATE kv SET v = '0' WHERE k = 'lock'");
@@ -49,13 +45,16 @@ const notifyAdmins = (db: D1Database, now: number, title: string, body: string) 
     SELECT id, ?, 'poller', ?, ? FROM devices WHERE admin = 1 AND endpoint IS NOT NULL AND push_dead IS NULL`)
     .bind(JSON.stringify({ title, body, url: '/#/seats', tag: 'poller' }), now, now + 6 * 60 * MIN);
 
-export async function drainOutbox(env: Env, now: number, max = PUSH_MAX): Promise<number> {
+type Due = { id: number; device: string; message: string; topic: string | null; tries: number; expires: number; endpoint: string; p256dh: string; auth: string };
+const due = (db: D1Database, now: number, max = PUSH_MAX) => db.prepare(`SELECT o.id, o.device, o.message, o.topic, o.tries, o.expires, d.endpoint, d.p256dh, d.auth
+    FROM outbox o JOIN devices d ON d.id = o.device
+    WHERE o.next <= ? AND o.expires > ? AND d.endpoint IS NOT NULL AND d.push_dead IS NULL
+    ORDER BY o.id LIMIT ?`).bind(now, now, max);
+
+/** Sends pushes that are due. `rows` when the caller already read them. */
+export async function drainOutbox(env: Env, now: number, rows?: Due[]): Promise<number> {
   const db = env.DB;
-  const { results } = await db.prepare(`SELECT o.id, o.device, o.message, o.topic, o.tries, o.expires, d.endpoint, d.p256dh, d.auth
-      FROM outbox o JOIN devices d ON d.id = o.device
-      WHERE o.next <= ? AND o.expires > ? AND d.endpoint IS NOT NULL AND d.push_dead IS NULL
-      ORDER BY o.id LIMIT ?`).bind(now, now, max)
-    .all<{ id: number; device: string; message: string; topic: string | null; tries: number; expires: number; endpoint: string; p256dh: string; auth: string }>();
+  const results = rows ?? (await due(db, now).all<Due>()).results;
   if (!results.length) return 0;
   const v = vapid(env);
   const writes: D1PreparedStatement[] = [];
@@ -85,16 +84,16 @@ export async function drainOutbox(env: Env, now: number, max = PUSH_MAX): Promis
  * Applies one department's fresh counts to its watches and queues alerts. Reads only the watches that could move:
  * sections that crossed between full and open, and watches made since the last check. One query, one batch.
  */
-async function apply(db: D1Database, term: string, dept: string, seats: Seat[], counts: TermCounts, now: number): Promise<number> {
+async function apply(db: D1Database, term: string, dept: string, seats: Seat[], counts: TermCounts, newest: number, now: number, writes: D1PreparedStatement[]): Promise<number> {
   const d = diffDept(counts[dept], seats, now);
   counts[dept] = d.next;
+  if (d.since && !d.crossed.length && newest <= d.since) return 0; // nothing that could move a watch
   const { results: watches } = await db.prepare(`SELECT device, course, sec, armed, alerts FROM watches
       WHERE term = ? AND dept = ? AND expires > ? AND (? = 0 OR created > ? OR course || '|' || sec IN (SELECT value FROM json_each(?)))`)
     .bind(term, dept, now, d.since, d.since, JSON.stringify(d.crossed))
     .all<{ device: string; course: string; sec: string; armed: number; alerts: string }>();
 
   let alerts = 0;
-  const writes: D1PreparedStatement[] = [];
   const queue: D1PreparedStatement[] = [];
   for (const w of watches) {
     const s = d.next.s[`${w.course}|${w.sec}`];
@@ -115,7 +114,7 @@ async function apply(db: D1Database, term: string, dept: string, seats: Seat[], 
     }
   }
   // Shuffled so the same people aren't always first when one seat opens for many watchers.
-  if (writes.length || queue.length) await db.batch([...writes, ...shuffle(queue)]);
+  writes.push(...shuffle(queue));
   return alerts;
 }
 
@@ -134,19 +133,27 @@ export interface RunReport { pushed: number; polled: string[]; alerts: number; s
 
 export async function run(env: Env, now = Date.now()): Promise<RunReport> {
   const db = env.DB;
-  const pushed = await drainOutbox(env, now);
+  // Everything a quiet run needs, in one round trip.
+  const [out, w, kv] = await db.batch([
+    due(db, now),
+    db.prepare('SELECT term, dept, MAX(created) AS newest FROM watches WHERE expires > ? GROUP BY term, dept').bind(now),
+    db.prepare("SELECT k, v FROM kv WHERE k IN ('poller', 'session', 'polled') OR k LIKE 'live:%'"),
+  ]);
+  const pushed = await drainOutbox(env, now, out!.results as Due[]);
   if (new Date(now).getUTCMinutes() % 30 === 0) await cleanup(db, now);
 
-  const { results: watched } = await db.prepare('SELECT DISTINCT term, dept FROM watches WHERE expires > ?').bind(now).all<{ term: string; dept: string }>();
+  const watched = w!.results as { term: string; dept: string; newest: number }[];
   if (!watched.length) return { pushed, polled: [], alerts: 0, skipped: 'nothing watched' }; // no requests at all
+  const newest = new Map(watched.map((x) => [`${x.term}|${x.dept}`, x.newest]));
 
-  const st = await kvGet<unknown>(db, ['poller', 'session', 'polled']);
+  const st: Record<string, unknown> = Object.fromEntries((kv!.results as { k: string; v: string }[]).map((r) => [r.k, JSON.parse(r.v)]));
   const p: PollerState = { ...freshPoller(), ...(st.poller as Partial<PollerState> | undefined) };
   if (now < p.until) return { pushed, polled: [], alerts: 0, skipped: p.blocked ? 'blocked, waiting' : 'backing off' };
   if (!(await lock(db, now))) return { pushed, polled: [], alerts: 0, skipped: 'another run is polling' };
 
   const polled = (st.polled as Record<string, number> | undefined) ?? {};
-  const counts: Record<string, TermCounts> = {}; // term -> counts, loaded for the terms this run polls
+  const counts: Record<string, TermCounts> = {}; // term -> counts
+  for (const [k, v] of Object.entries(st)) if (k.startsWith('live:')) counts[k.slice(5)] = v as TermCounts;
   let session = st.session as Session | undefined;
   const report: RunReport = { pushed, polled: [], alerts: 0 };
   const writes: D1PreparedStatement[] = [];
@@ -154,8 +161,6 @@ export async function run(env: Env, now = Date.now()): Promise<RunReport> {
     const keys = watched.map((w) => `${w.term}|${w.dept}`);
     const pick = pickDepts(keys, polled, now, gap(p), pushed > 10 ? 1 : DEPTS_MAX);
     if (!pick.length) { report.skipped = 'all departments fresh'; return report; }
-    const stored = await kvGet<TermCounts>(db, [...new Set(pick.map((k) => `live:${k.split('|')[0]}`))]);
-    for (const [k, v] of Object.entries(stored)) counts[k.slice(5)] = v;
     let wasSlow = false;
     for (const key of pick) {
       if (Date.now() - now > WALL_MS) break;
@@ -191,7 +196,7 @@ export async function run(env: Env, now = Date.now()): Promise<RunReport> {
       polled[key] = now;
       report.polled.push(key);
       if (!got.seats.length) writes.push(logEvent(db, now, 'empty', { dept })); // a bad filter or a page change
-      else report.alerts += await apply(db, term, dept, got.seats, (counts[term] ??= {}), now);
+      else report.alerts += await apply(db, term, dept, got.seats, (counts[term] ??= {}), newest.get(key) ?? 0, now, writes);
       if (recordTime(p, dept, got.ms).slow) {
         // Their server is struggling: poll less often and stop for this run.
         p.slow = Math.min(p.slow + 1, 3);
@@ -204,7 +209,7 @@ export async function run(env: Env, now = Date.now()): Promise<RunReport> {
     if (report.alerts) writes.push(logEvent(db, now, 'alerts', { n: report.alerts, polled: report.polled }));
     return report;
   } finally {
-    for (const [term, c] of Object.entries(counts)) writes.push(kvPut(db, `live:${term}`, pruneTerm(c, now)));
+    for (const term of new Set(report.polled.map((k) => k.split('|')[0]!))) writes.push(kvPut(db, `live:${term}`, pruneTerm(counts[term]!, now)));
     writes.push(kvPut(db, 'poller', p), kvPut(db, 'polled', polled), unlock(db));
     if (session) writes.push(kvPut(db, 'session', session));
     else writes.push(db.prepare("DELETE FROM kv WHERE k = 'session'"));
