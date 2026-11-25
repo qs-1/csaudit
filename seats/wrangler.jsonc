@@ -11,7 +11,7 @@
     "SITE": "https://csaudit.vercel.app",
     "VAPID_SUBJECT": "https://csaudit.vercel.app",
     // Public half of the VAPID key pair (npm run vapid). The private half is the VAPID_JWK secret.
-    "VAPID_PUBLIC": "SET_ME"
+    "VAPID_PUBLIC": "BHMyq2JHIu5t8cF9PvcEhRjCfApmRy8UoY43WRbgY2z0f0RzbVxe6VUnUP2LoK_EXiVegEi5eteqzVhoclJd3eA"
   },
-  "d1_databases": [{ "binding": "DB", "database_name": "fccu-seats", "database_id": "SET_ME" }]
+  "d1_databases": [{ "binding": "DB", "database_name": "fccu-seats", "database_id": "27fa37f0-15a2-4bff-83ee-a1a294bfb5fb" }]
 }
