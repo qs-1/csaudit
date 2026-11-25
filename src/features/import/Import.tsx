@@ -1,6 +1,6 @@
-import { CalendarRange, ChevronRight, CircleHelp, ClipboardPaste, FileUp, Loader2, Lock } from 'lucide-react';
+import { Bell, ChevronRight, CircleHelp, ClipboardPaste, FileUp, Loader2, Lock } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useEffect, useRef, useState, type DragEvent } from 'react';
+import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { Mark } from '@/app/Mark';
 import { SAMPLE_TRANSCRIPT } from '@/data/sample';
 import { CURRENT, TERMS } from '@/data/registry';
@@ -123,20 +123,21 @@ export function Import() {
           {drag ? (
             <div className="pointer-events-none absolute inset-0 grid place-items-center bg-surface/90 text-md text-fg">Drop to read</div>
           ) : null}
-          <div className="flex items-center gap-2 border-t border-line/70 p-3">
-            <Button variant="ghost" size="md" disabled={busy} onClick={() => fileRef.current?.click()}>
+          <div className="flex items-center gap-1 border-t border-line/70 p-3 md:gap-2">
+            {/* Under 360px wide the two lose their words, so Continue stays on the card. */}
+            <Button variant="ghost" size="md" aria-label="Read a PDF" className="px-3 max-[359px]:px-2.5 md:px-4" disabled={busy} onClick={() => fileRef.current?.click()}>
               {/* Same label while reading, so the row never changes width. */}
               {busy ? <Loader2 className="animate-spin" /> : <FileUp />}
-              PDF
+              <span className="max-[359px]:hidden">PDF</span>
             </Button>
-            <Button variant="ghost" size="md" className="md:hidden" onClick={pasteClipboard}>
+            <Button variant="ghost" size="md" aria-label="Paste" className="px-3 max-[359px]:px-2.5 md:hidden" onClick={pasteClipboard}>
               <ClipboardPaste />
-              Paste
+              <span className="max-[359px]:hidden">Paste</span>
             </Button>
             <Button variant="ghost" size="icon" className="ml-auto" aria-label="How to copy it from Empower" title="How to copy it from Empower" onClick={() => setHowTo(true)}>
               <CircleHelp strokeWidth={1.75} />
             </Button>
-            <Button variant="primary" size="md" className="px-5" disabled={!text.trim() || busy} onClick={() => submit(text)}>
+            <Button variant="primary" size="md" className="px-4 md:px-5" disabled={!text.trim() || busy} onClick={() => submit(text)}>
               Continue
             </Button>
           </div>
@@ -161,19 +162,23 @@ export function Import() {
         ) : null}
 
         {/* The planner works without a transcript, just without degree requirements. */}
-        <div className="mt-auto pt-8 md:mt-10 md:pt-0" style={{ paddingBottom: 'max(24px, var(--safe-b))' }}>
-          <button
-            type="button"
-            onClick={() => { actions.planOnly(); go('planner'); }}
-            className="flex w-full items-center gap-3 rounded-card border border-line px-4 py-3.5 text-left transition-colors hover:bg-fg/[0.03] press md:pb-3.5"
-          >
-            <CalendarRange className="size-5 shrink-0 text-fg-2" strokeWidth={1.5} />
-            <span className="min-w-0 flex-1">
-              <span className="block text-base font-medium">Make a schedule</span>
-              <span className="block text-sm text-fg-3">{TERMS[TERMS.length - 1]?.label ?? 'Next term'} sections, no transcript needed</span>
-            </span>
-            <ChevronRight className="size-4 shrink-0 text-fg-3" strokeWidth={1.5} />
-          </button>
+        <div className="mt-auto pt-10 md:mt-12 md:pt-0" style={{ paddingBottom: 'max(24px, var(--safe-b))' }}>
+          <div className="grid grid-cols-2 gap-3 max-[359px]:grid-cols-1 md:gap-4">
+            <Entry
+              title="Make a schedule"
+              sub={`${TERMS[TERMS.length - 1]?.label ?? 'Next term'} sections, clashes and seats`}
+              onClick={() => { actions.planOnly(); go('planner'); }}
+            >
+              <WeekPreview />
+            </Entry>
+            <Entry
+              title="Seat alerts"
+              sub="When a full section opens, or a new one is added"
+              onClick={() => { actions.planOnly(); go('seats'); }}
+            >
+              <AlertPreview />
+            </Entry>
+          </div>
           <p className="mt-5 text-center text-xs text-fg-3">
             <a href={REPO} target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-fg">Open source</a>
             <span className="mx-1.5 opacity-60">·</span>
@@ -182,6 +187,60 @@ export function Import() {
         </div>
       </motion.div>
       <HowTo open={howTo} onOpenChange={setHowTo} />
+    </div>
+  );
+}
+
+/* ---------- Ways in without a transcript ---------- */
+
+function Entry({ title, sub, onClick, children }: { title: string; sub: string; onClick: () => void; children: ReactNode }) {
+  return (
+    <button type="button" onClick={onClick} className="press group flex flex-col rounded-card bg-surface p-4 text-left shadow-soft transition-shadow hover:shadow-card md:p-5">
+      <div className="h-[76px] w-full" aria-hidden>{children}</div>
+      <span className="mt-4 flex items-center gap-1 text-base font-medium">
+        {title}
+        <ChevronRight className="hidden size-4 shrink-0 text-fg-3 transition-transform group-hover:translate-x-0.5 md:block" strokeWidth={1.75} />
+      </span>
+      <span className="mt-0.5 text-sm leading-snug text-fg-3">{sub}</span>
+    </button>
+  );
+}
+
+/** A small week in the palette's colours, like the planner's timetable. */
+function WeekPreview() {
+  // [day, start, length, colour] on a 0-10 scale down the column
+  const blocks: [number, number, number, number][] = [[0, 0, 3, 0], [2, 0, 3, 0], [1, 4, 3, 1], [3, 4, 3, 1], [0, 5, 4, 2], [4, 1, 3, 3], [2, 6, 3, 2]];
+  return (
+    <div className="grid h-full grid-cols-5 gap-1">
+      {['M', 'T', 'W', 'T', 'F'].map((d, i) => (
+        <div key={i} className="flex flex-col">
+          <span className="mb-1 text-center text-[10px] leading-none text-fg-3">{d}</span>
+          <div className="relative flex-1 rounded-[5px] bg-fg/[0.04]">
+            {blocks.filter(([day]) => day === i).map(([, top, h, c], k) => (
+              <span key={k} className="absolute inset-x-0.5 rounded-[4px]" style={{ top: `${top * 10}%`, height: `${h * 10}%`, background: `rgb(var(--c${c}))` }} />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** What an alert looks like: the notification as it arrives. */
+function AlertPreview() {
+  const note = (code: string, what: string, on: boolean) => (
+    <div className={cn('flex items-center gap-2 rounded-[11px] px-2.5 py-1.5', on ? 'bg-surface-2' : 'bg-surface-2/60 opacity-70')}>
+      <Bell className="size-3.5 shrink-0" strokeWidth={1.75} fill={on ? 'currentColor' : 'none'} />
+      <span className="min-w-0 leading-none">
+        <span className="num block truncate text-[11px] font-medium">{code}</span>
+        <span className="mt-1 block truncate text-[10px] text-fg-3">{what}</span>
+      </span>
+    </div>
+  );
+  return (
+    <div className="flex h-full flex-col justify-center gap-1.5">
+      {note('MATH 107 C', '1 of 35 open · now', true)}
+      {note('COMP 421 F', 'New section', false)}
     </div>
   );
 }
