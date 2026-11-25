@@ -1,4 +1,4 @@
-import { StrictMode } from 'react';
+import { Component, StrictMode, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './app/App';
 import './index.css';
@@ -51,8 +51,29 @@ if (seats.hasDevice()) {
   if (import.meta.env.PROD) void seats.resync();
 }
 
+/** Anything that throws while drawing shows a way out instead of an empty page. Saved data is left alone. */
+class Crash extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  componentDidCatch(e: unknown) { console.error(e); }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div className="grid min-h-dvh place-items-center bg-bg p-6 text-fg">
+        <div className="max-w-sm text-center">
+          <p className="text-base font-medium">Something went wrong</p>
+          <p className="mt-1 text-sm text-fg-3">Your transcript and plans are still saved on this device.</p>
+          <button type="button" onClick={() => location.reload()} className="press mt-5 rounded-[10px] bg-fg px-4 py-2 text-sm font-medium text-bg">Reload</button>
+        </div>
+      </div>
+    );
+  }
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <Crash>
+      <App />
+    </Crash>
   </StrictMode>,
 );

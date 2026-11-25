@@ -44,8 +44,10 @@ async function api<T>(path: string, init: RequestInit = {}, device = readDevice(
   } catch {
     throw new SeatError('Can’t reach seat alerts', 0);
   }
-  const body = await res.json().catch(() => ({})) as { error?: string };
-  if (!res.ok) throw new SeatError(body.error ?? `Seat alerts answered ${res.status}`, res.status);
+  const body = await res.json().catch(() => null) as { error?: string } | null;
+  if (!res.ok) throw new SeatError(body?.error ?? `Seat alerts answered ${res.status}`, res.status);
+  // A reply that can't be read is a failure, never an empty success the screens would draw from.
+  if (!body) throw new SeatError('Can’t reach seat alerts', 0);
   return body as T;
 }
 
