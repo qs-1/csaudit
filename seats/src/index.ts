@@ -117,10 +117,10 @@ async function testPush(env: Env, d: Device) {
   if (last && Date.now() - Number(last.v) < 30_000) return fail(429, 'Wait a few seconds before another test');
   await env.DB.prepare('INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v').bind(key, String(Date.now())).run();
   const sub = await env.DB.prepare('SELECT endpoint, p256dh, auth FROM devices WHERE id = ?').bind(d.id).first<{ endpoint: string; p256dh: string; auth: string }>();
-  const status = await send(vapid(env), sub!, { title: 'Test alert', body: 'Seat alerts will look like this.', url: '/#/seats', tag: 'test' }, { ttl: 300, urgency: 'high', topic: 'test' }).catch(() => 0);
+  const status = await send(vapid(env), sub!, { title: 'Test alert', body: '', url: '/#/seats', tag: 'test' }, { ttl: 300, urgency: 'high', topic: 'test' }).catch(() => 0);
   if (status === 404 || status === 410) {
     await env.DB.prepare('UPDATE devices SET push_dead = ? WHERE id = ?').bind(Date.now(), d.id).run();
-    return fail(410, 'This device’s notification subscription has expired');
+    return fail(410, 'Notifications stopped on this device');
   }
   return status >= 200 && status < 300 ? json({ sent: true }) : fail(502, `The push service answered ${status || 'nothing'}`);
 }

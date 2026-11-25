@@ -179,12 +179,12 @@ export async function run(env: Env, now = Date.now()): Promise<RunReport> {
         if (p.blocked) session = undefined;
         writes.push(logEvent(db, now, p.blocked ? 'blocked' : 'error', { dept, message: err.message, ms: err.ms, fails: p.fails }));
         if (p.blocked && !wasBlocked) {
-          writes.push(notifyAdmins(db, now, 'Seat checks paused', `Empower refused the poller (${err.message}). Trying again in an hour. Nobody gets alerts until then.`));
+          writes.push(notifyAdmins(db, now, 'Seat checks paused', `${err.message}. Retrying in an hour.`));
         }
         report.error = err.message;
         break;
       }
-      if (p.blocked) writes.push(notifyAdmins(db, now, 'Seat checks resumed', 'Empower is answering again.'));
+      if (p.blocked) writes.push(notifyAdmins(db, now, 'Seat checks resumed', ''));
       p.fails = 0;
       p.blocked = false;
       p.lastOk = Date.now();

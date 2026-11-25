@@ -42,7 +42,7 @@ async function api<T>(path: string, init: RequestInit = {}, device = readDevice(
   try {
     res = await fetch(`/api${path}`, { ...init, headers: { ...headers, ...(init.headers as Record<string, string> | undefined) } });
   } catch {
-    throw new SeatError('Can’t reach seat alerts. Check your connection.', 0);
+    throw new SeatError('Can’t reach seat alerts', 0);
   }
   const body = await res.json().catch(() => ({})) as { error?: string };
   if (!res.ok) throw new SeatError(body.error ?? `Seat alerts answered ${res.status}`, res.status);
