@@ -232,16 +232,39 @@ export const seats = {
   },
 };
 
-/** Refreshes the watch list now and every minute while the page is visible. */
-export function useWatchPolling(enabled = true) {
+/* ---------- Polling: only while someone is looking ---------- */
+
+const POLL_MS = 2 * 60_000; // the poller checks a department every few minutes anyway
+const IDLE_MS = 10 * 60_000; // no touch, click, key or scroll for this long: a tab left open, so stop asking
+
+let lastInput = Date.now();
+const idleWaiters = new Set<() => void>();
+if (typeof window !== 'undefined') {
+  const input = () => {
+    const wasIdle = Date.now() - lastInput > IDLE_MS;
+    lastInput = Date.now();
+    if (wasIdle) idleWaiters.forEach((f) => f()); // back at the screen: refresh now, not at the next tick
+  };
+  for (const e of ['pointerdown', 'keydown', 'wheel', 'touchstart', 'scroll']) window.addEventListener(e, input, { passive: true, capture: true });
+}
+const watching = () => document.visibilityState === 'visible' && Date.now() - lastInput < IDLE_MS;
+
+/** Runs `fn` now and every 2 minutes while the page is visible and in use; again as soon as someone comes back. */
+function usePolling(fn: () => void, enabled: boolean, deps: unknown[]) {
   useEffect(() => {
     if (!enabled) return;
-    void seats.refresh();
-    const tick = () => { if (document.visibilityState === 'visible') void seats.refresh(); };
-    const id = setInterval(tick, 60_000);
+    fn();
+    const tick = () => { if (watching()) fn(); };
+    const id = setInterval(tick, POLL_MS);
     document.addEventListener('visibilitychange', tick);
-    return () => { clearInterval(id); document.removeEventListener('visibilitychange', tick); };
-  }, [enabled]);
+    idleWaiters.add(tick);
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', tick); idleWaiters.delete(tick); };
+  }, [enabled, ...deps]); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
+/** Refreshes the watch list now and every 2 minutes while the page is visible and in use. */
+export function useWatchPolling(enabled = true) {
+  usePolling(() => void seats.refresh(), enabled, []);
 }
 
 /* ---------- Live counts for the planner ---------- */
@@ -259,7 +282,7 @@ const publish = () => { version++; listeners.forEach((f) => f()); };
 
 function loadLive(term: string) {
   const cur = live.get(term);
-  if (document.visibilityState !== 'visible' || cur?.busy || (cur && Date.now() - cur.at < 55_000)) return;
+  if (document.visibilityState !== 'visible' || cur?.busy || (cur && Date.now() - cur.at < POLL_MS - 5_000)) return;
   live.set(term, { map: cur?.map ?? EMPTY, at: cur?.at ?? 0, busy: true });
   fetch(`/api/seats?term=${encodeURIComponent(term)}`)
     .then((r) => (r.ok ? r.json() : null))
@@ -271,16 +294,9 @@ function loadLive(term: string) {
     .catch(() => { live.set(term, { map: cur?.map ?? EMPTY, at: Date.now(), busy: false }); });
 }
 
-/** Fresher seat counts than the hourly snapshot, for departments someone watches. Refreshed every minute while visible. */
+/** Fresher seat counts than the hourly snapshot, for departments someone watches. Refreshed every 2 minutes while in use. */
 export function useLiveSeats(term: string | null): LiveSeats {
   useSyncExternalStore((f) => { listeners.add(f); return () => listeners.delete(f); }, () => version, () => version);
-  useEffect(() => {
-    if (!term || import.meta.env.MODE === 'test') return;
-    const tick = () => loadLive(term);
-    tick();
-    const id = setInterval(tick, 60_000);
-    document.addEventListener('visibilitychange', tick);
-    return () => { clearInterval(id); document.removeEventListener('visibilitychange', tick); };
-  }, [term]);
+  usePolling(() => loadLive(term!), !!term && import.meta.env.MODE !== 'test', [term]);
   return (term && live.get(term)?.map) || EMPTY;
 }
