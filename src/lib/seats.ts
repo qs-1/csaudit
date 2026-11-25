@@ -196,6 +196,9 @@ export const seats = {
 
   test: () => guarded(async () => { await api('/devices/me/test', { method: 'POST' }); }),
 
+  /** Re-arms an open watched section so the poller sends a real alert for it within a couple of minutes. */
+  liveTest: () => guarded(() => api<{ course: string; sec: string }>('/devices/me/livetest', { method: 'POST' })),
+
   forget: () => guarded(async () => {
     await api('/devices/me', { method: 'DELETE' }).catch(() => {});
     const reg = await navigator.serviceWorker?.ready;

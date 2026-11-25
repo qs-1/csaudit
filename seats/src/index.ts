@@ -125,6 +125,33 @@ async function testPush(env: Env, d: Device) {
   return status >= 200 && status < 300 ? json({ sent: true }) : fail(502, `The push service answered ${status || 'nothing'}`);
 }
 
+/**
+ * A real alert through the whole path: re-arms one of this device's open watched sections and marks it new, so the
+ * next poll reads it, sees seats and queues a push like any reopening. Only this device's watch changes.
+ */
+async function liveTest(env: Env, d: Device) {
+  if (!d.endpoint || d.push_dead) return fail(409, 'Turn on notifications first');
+  const now = Date.now();
+  const key = `livetest:${d.id}`;
+  const last = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(key).first<{ v: string }>();
+  if (last && now - Number(last.v) < 5 * MIN) return fail(429, 'One test every 5 minutes');
+  const { results } = await env.DB.prepare('SELECT term, course, sec, dept FROM watches WHERE device = ? AND expires > ?').bind(d.id, now)
+    .all<{ term: string; course: string; sec: string; dept: string }>();
+  const counts: Record<string, TermCounts> = {};
+  for (const t of new Set(results.map((w) => w.term))) counts[t] = await termCounts(env, t);
+  const open = results.find((w) => {
+    const dc = counts[w.term]?.[w.dept];
+    const c = dc && now - dc.at < FRESH ? dc.s[`${w.course}|${w.sec}`] : undefined;
+    return c && c[0] > 0;
+  });
+  if (!open) return fail(409, 'Watch a section with open seats, wait a minute, then try again');
+  await env.DB.batch([
+    env.DB.prepare('UPDATE watches SET armed = 1, alerts = ?, created = ? WHERE device = ? AND term = ? AND course = ? AND sec = ?').bind('[]', now, d.id, open.term, open.course, open.sec),
+    env.DB.prepare('INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v').bind(key, String(now)),
+  ]);
+  return json({ course: open.course, sec: open.sec });
+}
+
 /* ---------- Watches ---------- */
 
 const pushState = (d: Device) => (!d.endpoint ? 'none' : d.push_dead ? 'dead' : 'on');
@@ -220,6 +247,7 @@ export default {
         case 'DELETE /api/watches': return await removeWatch(req, env, d);
         case 'PUT /api/devices/me/push': return await setPush(req, env, d);
         case 'POST /api/devices/me/test': return await testPush(env, d);
+        case 'POST /api/devices/me/livetest': return await liveTest(env, d);
         case 'POST /api/admin/probe': return await probeTerm(d, url.searchParams.get('term'));
         case 'DELETE /api/devices/me':
           await env.DB.batch([env.DB.prepare('DELETE FROM watches WHERE device = ?').bind(d.id), env.DB.prepare('DELETE FROM devices WHERE id = ?').bind(d.id)]);

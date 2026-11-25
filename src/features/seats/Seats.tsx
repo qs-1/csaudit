@@ -96,6 +96,7 @@ function MoreMenu({ mobile }: { mobile?: boolean }) {
         <Menu.Content align="end" sideOffset={8} className="z-50 min-w-[220px] rounded-xl bg-surface p-1 shadow-pop data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-top-1">
           {push === 'on' ? <>
             <Menu.Item className={item} onSelect={() => void seats.test().then(() => toast('Test sent'), fail)}>Send test</Menu.Item>
+            <Menu.Item className={item} onSelect={() => void seats.liveTest().then((r) => r && toast(`${r.course} ${r.sec}: alert within 2 minutes`), fail)}>Test a real alert</Menu.Item>
             <Menu.Item className={item} onSelect={() => void seats.disablePush().catch(fail)}>Turn off notifications</Menu.Item>
             <Menu.Separator className="mx-2 my-1 h-px bg-line" />
           </> : null}
