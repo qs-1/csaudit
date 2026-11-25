@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 660" width="1320" height="660" font-family="Geist, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <filter id="soft" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#231651" flood-opacity="0.06"/>
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#231651" flood-opacity="0.08"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#69747C"/>
+    </marker>
+    <style>
+      .card { fill: #fff; filter: url(#soft); }
+      .inner { fill: #f8f8f6; }
+      .t { font-size: 17px; font-weight: 600; fill: #231651; }
+      .b { font-size: 13.5px; fill: #5b5f66; }
+      .s { font-size: 12.5px; fill: #69747C; }
+      .tag { font-size: 11.5px; font-weight: 600; letter-spacing: .04em; }
+      .line { stroke: #69747C; stroke-width: 1.6; fill: none; }
+    </style>
+  </defs>
+
+  <rect width="1320" height="660" rx="24" fill="#f8f8f6"/>
+
+  <!-- Phone or laptop -->
+  <rect class="card" x="40" y="60" width="260" height="470" rx="18"/>
+  <rect x="60" y="80" width="74" height="22" rx="11" fill="#D6FFF6"/>
+  <text class="tag" x="97" y="95.5" text-anchor="middle" fill="#231651">BROWSER</text>
+  <text class="t" x="60" y="132">Phone or laptop</text>
+  <text class="b" x="60" y="164">React app, installable (PWA)</text>
+  <rect class="inner" x="60" y="184" width="220" height="74" rx="12"/>
+  <text class="b" x="74" y="208">Transcript read here,</text>
+  <text class="b" x="74" y="227">never uploaded</text>
+  <text class="s" x="74" y="246">plans stay in this browser</text>
+  <text class="b" x="60" y="290">Degree checklist, GPA,</text>
+  <text class="b" x="60" y="309">timetable planner</text>
+  <rect class="inner" x="60" y="436" width="220" height="74" rx="12"/>
+  <text class="b" x="74" y="460">Service worker shows</text>
+  <text class="b" x="74" y="479">seat alerts</text>
+  <text class="s" x="74" y="498">even with the site closed</text>
+
+  <!-- Vercel -->
+  <rect class="card" x="360" y="60" width="280" height="200" rx="18"/>
+  <rect x="380" y="80" width="64" height="22" rx="11" fill="#FFBC42"/>
+  <text class="tag" x="412" y="95.5" text-anchor="middle" fill="#231651">HOST</text>
+  <text class="t" x="380" y="132">Vercel</text>
+  <text class="b" x="380" y="164">Site and catalog data (JSON)</text>
+  <rect class="inner" x="380" y="180" width="240" height="60" rx="12"/>
+  <text class="b" x="394" y="204">middleware.ts proxies /api</text>
+  <text class="s" x="394" y="223">adds a secret key and visitor IP</text>
+
+  <!-- GitHub Actions -->
+  <rect class="card" x="360" y="400" width="280" height="130" rx="18"/>
+  <rect x="380" y="420" width="80" height="22" rx="11" fill="#FFBC42"/>
+  <text class="tag" x="420" y="435.5" text-anchor="middle" fill="#231651">HOURLY</text>
+  <text class="t" x="380" y="472">GitHub Actions</text>
+  <text class="b" x="380" y="499">Scrapes FCCU's course catalog,</text>
+  <text class="b" x="380" y="518">commits when sections change</text>
+
+  <!-- Cloudflare Worker -->
+  <rect class="card" x="700" y="60" width="320" height="270" rx="18"/>
+  <rect x="720" y="80" width="98" height="22" rx="11" fill="#FF8484"/>
+  <text class="tag" x="769" y="95.5" text-anchor="middle" fill="#231651">FREE PLAN</text>
+  <text class="t" x="720" y="132">Cloudflare Worker</text>
+  <text class="b" x="720" y="164">API: devices, watches, live seats</text>
+  <text class="b" x="720" y="186">Cron every minute checks</text>
+  <text class="b" x="720" y="205">departments someone watches</text>
+  <rect class="inner" x="720" y="228" width="134" height="82" rx="12"/>
+  <text class="b" x="734" y="254" font-weight="600" fill="#231651">D1 database</text>
+  <text class="s" x="734" y="274">watches, counts,</text>
+  <text class="s" x="734" y="292">push outbox</text>
+  <rect class="inner" x="866" y="228" width="134" height="82" rx="12"/>
+  <text class="b" x="880" y="254" font-weight="600" fill="#231651">Queue</text>
+  <text class="s" x="880" y="274">25 pushes per</text>
+  <text class="s" x="880" y="292">message, in parallel</text>
+
+  <!-- Push services -->
+  <rect class="card" x="700" y="420" width="320" height="110" rx="18"/>
+  <rect x="720" y="440" width="52" height="22" rx="11" fill="#FF8484"/>
+  <text class="tag" x="746" y="455.5" text-anchor="middle" fill="#231651">PUSH</text>
+  <text class="t" x="720" y="492">Push services</text>
+  <text class="b" x="720" y="515">Google, Apple, Mozilla, Microsoft</text>
+
+  <!-- FCCU Empower -->
+  <rect class="card" x="1080" y="60" width="200" height="200" rx="18"/>
+  <rect x="1100" y="80" width="56" height="22" rx="11" fill="#231651"/>
+  <text class="tag" x="1128" y="95.5" text-anchor="middle" fill="#D6FFF6">FCCU</text>
+  <text class="t" x="1100" y="132">Empower</text>
+  <text class="b" x="1100" y="164">Live seat counts</text>
+  <text class="s" x="1100" y="190">one department</text>
+  <text class="s" x="1100" y="208">per request, with</text>
+  <text class="s" x="1100" y="226">backoff if it slows</text>
+
+  <!-- Arrows -->
+  <path class="line" d="M300 150 H356" marker-end="url(#arrow)"/>
+  <text class="s" x="330" y="140" text-anchor="middle">/api</text>
+  <path class="line" d="M640 150 H696" marker-end="url(#arrow)"/>
+  <text class="s" x="670" y="140" text-anchor="middle">+ key</text>
+  <path class="line" d="M1020 150 H1076" marker-end="url(#arrow)"/>
+  <text class="s" x="1050" y="140" text-anchor="middle">poll</text>
+  <path class="line" d="M500 400 V264" marker-end="url(#arrow)"/>
+  <text class="s" x="512" y="336">deploys</text>
+  <path class="line" d="M860 330 V416" marker-end="url(#arrow)"/>
+  <text class="s" x="872" y="378">alerts</text>
+  <path class="line" d="M860 530 V600 H170 V534" marker-end="url(#arrow)"/>
+  <text class="s" x="515" y="590" text-anchor="middle">notification: “COMP 311 A: 1 of 25 open”</text>
+</svg>

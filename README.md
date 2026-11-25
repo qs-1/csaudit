@@ -31,6 +31,10 @@ The transcript stays in the browser. It's never uploaded, and it's forgotten whe
   <img src=".github/screenshots/phone-gpa.png" width="200" alt="GPA on a phone">
 </p>
 
+## How it fits together
+
+![Architecture: the browser app, Vercel, GitHub Actions, the Cloudflare Worker, FCCU Empower and the push services](.github/screenshots/architecture.svg)
+
 ## Running it
 
 ```sh
@@ -51,7 +55,7 @@ Seat alerts run on a Cloudflare Worker in `seats/` (free plan). The dev server s
 | Live seat counts for watched departments | the Worker's database (`seats/`) |
 | Official PDFs | `public/docs/` |
 
-Section lists come from FCCU's public course catalog. A GitHub Action (`.github/workflows/catalog.yml`) checks for changes every 3 hours (current site does it every hour) and commits when something changed. To run it locally:
+Section lists come from FCCU's public course catalog. A GitHub Action (`.github/workflows/catalog.yml`) checks for changes every hour and commits when something changed. To run it locally:
 
 ```sh
 pip install requests beautifulsoup4
