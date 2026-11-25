@@ -17,5 +17,11 @@ export default async function middleware(req: Request): Promise<Response> {
   headers.set('x-client-ip', req.headers.get('x-real-ip') ?? ''); // set by Vercel, not by the visitor
   const body = req.method === 'GET' || req.method === 'HEAD' ? undefined : await req.arrayBuffer();
   const res = await fetch(`${WORKER}${url.pathname}${url.search}`, { method: req.method, headers, body, redirect: 'manual' });
-  return new Response(res.body, { status: res.status, headers: res.headers });
+  // fetch() has already decoded the body, so the Worker's encoding and length no longer describe it. Passing them
+  // on makes browsers fail with ERR_CONTENT_DECODING_FAILED.
+  const out = new Headers(res.headers);
+  out.delete('content-encoding');
+  out.delete('content-length');
+  out.delete('transfer-encoding');
+  return new Response(res.body, { status: res.status, headers: out });
 }
