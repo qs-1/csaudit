@@ -3,7 +3,7 @@
 // A device is a random id and secret kept in localStorage (the transcript stays in session storage; this holds no
 // personal data). Push is optional: without it the Seats screen still shows each watch's live count.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import { create } from 'zustand';
 
 const KEY = 'fccu-audit:seat-device';
@@ -206,26 +206,34 @@ export function useWatchPolling(enabled = true) {
 export type LiveSeats = Map<string, [avail: number, cap: number, seen: number]>;
 const EMPTY: LiveSeats = new Map();
 
-/** Fresher seat counts than the hourly snapshot, for departments someone watches. Polled every minute while visible. */
+// One fetch a minute for the whole page, however many components read the model.
+let live: { term: string | null; map: LiveSeats; at: number; busy: boolean } = { term: null, map: EMPTY, at: 0, busy: false };
+const listeners = new Set<() => void>();
+const publish = () => listeners.forEach((f) => f());
+
+function loadLive(term: string) {
+  if (document.visibilityState !== 'visible' || live.busy || (live.term === term && Date.now() - live.at < 55_000)) return;
+  live = { ...live, busy: true };
+  fetch(`/api/seats?term=${encodeURIComponent(term)}`)
+    .then((r) => (r.ok ? r.json() : null))
+    .then((j: { seats?: [string, string, number, number, number][] } | null) => {
+      const map: LiveSeats = j?.seats?.length ? new Map(j.seats.map(([c, sec, a, cap, seen]) => [`${c}|${sec}`, [a, cap, seen]])) : EMPTY;
+      live = { term, map, at: Date.now(), busy: false };
+      publish();
+    })
+    .catch(() => { live = { ...live, term, at: Date.now(), busy: false }; });
+}
+
+/** Fresher seat counts than the hourly snapshot, for departments someone watches. Refreshed every minute while visible. */
 export function useLiveSeats(term: string | null): LiveSeats {
-  const [live, setLive] = useState<{ term: string | null; map: LiveSeats }>({ term, map: EMPTY });
+  const snap = useSyncExternalStore((f) => { listeners.add(f); return () => listeners.delete(f); }, () => live, () => live);
   useEffect(() => {
     if (!term || import.meta.env.MODE === 'test') return;
-    let alive = true;
-    const load = () => {
-      if (document.visibilityState !== 'visible') return;
-      fetch(`/api/seats?term=${encodeURIComponent(term)}`)
-        .then((r) => (r.ok ? r.json() : null))
-        .then((j: { seats?: [string, string, number, number, number][] } | null) => {
-          if (!alive || !j?.seats) return;
-          setLive({ term, map: j.seats.length ? new Map(j.seats.map(([c, s, a, cap, seen]) => [`${c}|${s}`, [a, cap, seen]])) : EMPTY });
-        })
-        .catch(() => {});
-    };
-    load();
-    const id = setInterval(load, 60_000);
-    document.addEventListener('visibilitychange', load);
-    return () => { alive = false; clearInterval(id); document.removeEventListener('visibilitychange', load); };
+    const tick = () => loadLive(term);
+    tick();
+    const id = setInterval(tick, 60_000);
+    document.addEventListener('visibilitychange', tick);
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', tick); };
   }, [term]);
-  return live.term === term ? live.map : EMPTY;
+  return snap.term === term ? snap.map : EMPTY;
 }

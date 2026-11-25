@@ -101,7 +101,7 @@ function PollerLine({ now }: { now: number }) {
     poller === 'blocked' ? ['bg-bad', 'Checks paused: FCCU’s server refused them. Trying again within the hour.']
     : poller === 'backoff' ? ['bg-warn', `FCCU’s server is having trouble, so checks are waiting a bit. Last good check ${ago(lastOk, now)}.`]
     : poller === 'starting' || !lastOk ? ['bg-fg-3', 'The first check runs within a minute.']
-    : ['bg-good', `Checked every minute while registration is busy. Last check ${ago(lastOk, now)}.`];
+    : ['bg-good', `Checked about once a minute. Last check ${ago(lastOk, now)}.`];
   return (
     <p className="flex items-center gap-2 px-1 text-sm text-fg-3">
       <span className={cn('size-2 shrink-0 rounded-full', dot)} aria-hidden />
