@@ -135,21 +135,15 @@ async function liveTest(env: Env, d: Device) {
   const key = `livetest:${d.id}`;
   const last = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(key).first<{ v: string }>();
   if (last && now - Number(last.v) < 5 * MIN) return fail(429, 'One test every 5 minutes');
-  const { results } = await env.DB.prepare('SELECT term, course, sec, dept FROM watches WHERE device = ? AND expires > ?').bind(d.id, now)
-    .all<{ term: string; course: string; sec: string; dept: string }>();
-  const counts: Record<string, TermCounts> = {};
-  for (const t of new Set(results.map((w) => w.term))) counts[t] = await termCounts(env, t);
-  // A watch with seats by the last check, else one not checked yet (its first check decides).
-  const seatsOf = (w: (typeof results)[number]) => {
-    const dc = counts[w.term]?.[w.dept];
-    return dc && now - dc.at < FRESH ? dc.s[`${w.course}|${w.sec}`]?.[0] ?? null : null;
-  };
-  const open = results.find((w) => (seatsOf(w) ?? 0) > 0) ?? results.find((w) => seatsOf(w) === null);
-  if (!open) return fail(409, 'Watch a section that has seats first');
+  // Any watch will do: its next check sends an alert whatever the count, which runs the whole path a real one takes.
+  const w = await env.DB.prepare('SELECT term, course, sec FROM watches WHERE device = ? AND expires > ? ORDER BY created DESC LIMIT 1')
+    .bind(d.id, now).first<{ term: string; course: string; sec: string }>();
+  if (!w) return fail(409, 'Watch a section first');
   await env.DB.batch([
-    env.DB.prepare('UPDATE watches SET armed = 1, alerts = ?, created = ? WHERE device = ? AND term = ? AND course = ? AND sec = ?').bind('[]', now, d.id, open.term, open.course, open.sec),
+    env.DB.prepare('UPDATE watches SET test = 1 WHERE device = ? AND term = ? AND course = ? AND sec = ?').bind(d.id, w.term, w.course, w.sec),
     env.DB.prepare('INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v').bind(key, String(now)),
   ]);
+  const open = w;
   return json({ course: open.course, sec: open.sec });
 }
 
@@ -193,6 +187,7 @@ async function addWatch(req: Request, env: Env, d: Device) {
   const dc = (await termCounts(env, b.term))[deptOf(b.course)];
   const c = dc && now - dc.at < FRESH ? dc.s[`${b.course}|${b.sec}`] : undefined;
   const avail = c ? c[0] : Number.isInteger(b.avail) ? (b.avail as number) : null;
+  if (c && c[0] > 0) return fail(409, `${b.course} ${b.sec} has ${c[0]} open. Register on Empower.`);
   await env.DB.prepare(`INSERT INTO watches (device, term, course, sec, dept, armed, created, expires) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT (device, term, course, sec) DO UPDATE SET expires = excluded.expires`)
     .bind(d.id, b.term, b.course, b.sec, deptOf(b.course), armedFor(avail) ? 1 : 0, now, now + WATCH_DAYS * 24 * 60 * MIN).run();

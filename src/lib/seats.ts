@@ -89,6 +89,9 @@ async function ensureDevice(sub?: PushSubscriptionJSON): Promise<Device> {
   return device;
 }
 
+/** Most sections one device can watch; the Worker enforces the same. */
+export const WATCHES_MAX = 15;
+
 /* ---------- Shared state for the Seats screen and the watch buttons ---------- */
 
 interface SeatsState {

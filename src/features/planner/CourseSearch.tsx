@@ -11,7 +11,7 @@ import type { Model } from '@/state/model';
 import { useUI, ui } from '@/state/ui';
 import { Code, type Tone } from '@/ui/card';
 import { TERMS } from '@/data/registry';
-import { WatchBell } from '@/features/seats/Bell';
+import { useCanWatch, WatchBell } from '@/features/seats/Bell';
 import { Chip, Switch } from '@/ui/controls';
 import { preview, removeFromPlan, restoreToPlan, type PlanState } from './usePlan';
 
@@ -318,6 +318,7 @@ export function SectionRow({ s, p, onPick, touch, showSeats, watchTerm }: {
   const selected = p.inPlan(s.course)?.sec === s.sec;
   const clashes = selected ? [] : p.clashWith(s);
   const full = showSeats && !hasSeats(s);
+  const bell = useCanWatch(watchTerm, s);
   return (
     // A full section can still be planned (seats open up), it just reads as dimmed.
     <li className={cn('relative flex items-center gap-3 rounded-[12px] py-2.5 pl-3 pr-1.5', full && !selected && 'opacity-50 transition-opacity hover:opacity-80 has-[:focus-visible]:opacity-80')}>
@@ -344,11 +345,11 @@ export function SectionRow({ s, p, onPick, touch, showSeats, watchTerm }: {
         <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-fg-3">
           <span>{s.instructor || 'Staff'}</span>
           {showSeats ? <><span aria-hidden>·</span><span className={cn('num', full && 'text-bad')}>{full ? `Full · 0/${s.cap}` : `${s.avail}/${s.cap} seats`}</span></> : null}
-          {s.credits !== undefined && !watchTerm ? <><span aria-hidden>·</span><span className="num">{s.credits} cr</span></> : null}
+          {s.credits !== undefined && !bell ?<><span aria-hidden>·</span><span className="num">{s.credits} cr</span></> : null}
         </span>
         {clashes.length ? <span className="mt-1 block text-xs text-bad">Clashes with {clashes.map((x) => `${x.course} ${x.sec}`).join(', ')}</span> : null}
       </span>
-      {watchTerm ? <WatchBell term={watchTerm} s={s} className="relative -mr-2" /> : null}
+      {bell ? <WatchBell term={watchTerm!} s={s} className="relative -mr-2" /> : null}
       <span className="pointer-events-none relative grid size-7 shrink-0 place-items-center">
         {selected ? <Check className="size-4 text-fg" strokeWidth={2} /> : <Plus className="size-4 text-fg-3" strokeWidth={1.75} />}
       </span>
@@ -362,7 +363,7 @@ export const watchableTerm = (termId: string, secs: Section[]) => (termId === TE
 /** Whether the section list carries seat counts at all (older scrapes have none). */
 export const hasSeatCounts = (secs: Section[]) => secs.some((s) => s.cap > 0);
 
-function DeptPicker({ depts, value, onChange }: { depts: [string, number][]; value: string; onChange: (d: string) => void }) {
+export function DeptPicker({ depts, value, onChange }: { depts: [string, number][]; value: string; onChange: (d: string) => void }) {
   return (
     <Menu.Root modal={false}>
       <Menu.Trigger

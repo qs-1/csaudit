@@ -88,10 +88,10 @@ async function apply(db: D1Database, term: string, dept: string, seats: Seat[], 
   const d = diffDept(counts[dept], seats, now);
   counts[dept] = d.next;
   if (d.since && !d.crossed.length && newest <= d.since) return 0; // nothing that could move a watch
-  const { results: watches } = await db.prepare(`SELECT device, course, sec, armed, alerts FROM watches
-      WHERE term = ? AND dept = ? AND expires > ? AND (? = 0 OR created > ? OR course || '|' || sec IN (SELECT value FROM json_each(?)))`)
+  const { results: watches } = await db.prepare(`SELECT device, course, sec, armed, alerts, test FROM watches
+      WHERE term = ? AND dept = ? AND expires > ? AND (? = 0 OR created > ? OR test = 1 OR course || '|' || sec IN (SELECT value FROM json_each(?)))`)
     .bind(term, dept, now, d.since, d.since, JSON.stringify(d.crossed))
-    .all<{ device: string; course: string; sec: string; armed: number; alerts: string }>();
+    .all<{ device: string; course: string; sec: string; armed: number; alerts: string; test: number | null }>();
 
   let alerts = 0;
   const queue: D1PreparedStatement[] = [];
@@ -104,11 +104,12 @@ async function apply(db: D1Database, term: string, dept: string, seats: Seat[], 
       writes.push(db.prepare('UPDATE watches SET armed = ?, alerts = ?, last_alert = COALESCE(?, last_alert) WHERE device = ? AND term = ? AND course = ? AND sec = ?')
         .bind(r.next.armed ? 1 : 0, JSON.stringify(r.next.alerts), r.alert ? now : null, w.device, term, w.course, w.sec));
     }
-    if (r.alert) {
-      alerts++;
+    if (w.test) writes.push(db.prepare('UPDATE watches SET test = NULL WHERE device = ? AND term = ? AND course = ? AND sec = ?').bind(w.device, term, w.course, w.sec));
+    if (r.alert || w.test) {
+      if (r.alert) alerts++;
       queue.push(db.prepare('INSERT INTO outbox (device, message, topic, next, expires) VALUES (?, ?, ?, ?, ?)').bind(
         w.device,
-        JSON.stringify({ title: `${w.course} ${w.sec}: ${avail} of ${cap} open`, body: `At ${clock(now)}`, url: '/#/seats', tag: `${term}-${w.course}-${w.sec}` }),
+        JSON.stringify({ title: `${w.course} ${w.sec}: ${avail} of ${cap} open`, body: `${r.alert ? 'At' : 'Test alert at'} ${clock(now)}`, url: '/#/seats', tag: `${term}-${w.course}-${w.sec}` }),
         `${term}${w.course}${w.sec}`, now, now + ALERT_TTL,
       ));
     }
@@ -136,7 +137,8 @@ export async function run(env: Env, now = Date.now()): Promise<RunReport> {
   // Everything a quiet run needs, in one round trip.
   const [out, w, kv] = await db.batch([
     due(db, now),
-    db.prepare('SELECT term, dept, MAX(created) AS newest FROM watches WHERE expires > ? GROUP BY term, dept').bind(now),
+    // A watch marked for a test counts as new, so its department's next check reads it.
+    db.prepare('SELECT term, dept, MAX(CASE WHEN test = 1 THEN ? ELSE created END) AS newest FROM watches WHERE expires > ? GROUP BY term, dept').bind(now, now),
     db.prepare("SELECT k, v FROM kv WHERE k IN ('poller', 'session', 'polled') OR k LIKE 'live:%'"),
   ]);
   const pushed = await drainOutbox(env, now, out!.results as Due[]);

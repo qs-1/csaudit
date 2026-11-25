@@ -10,7 +10,7 @@ export const DAY_LONG: Record<string, string> = { M: 'Monday', T: 'Tuesday', W: 
 export const sid = (s: Section) => `${s.course} ${s.sec}`;
 export const hm = (x: number) => `${String((x / 60) | 0).padStart(2, '0')}:${String(x % 60).padStart(2, '0')}`;
 export const isUnscheduled = (s: Section) => s.meetings.every((m) => m.start == null);
-export const hasSeats = (s: Section) => s.avail > 0 || s.cap === 0;
+export const hasSeats = (s: Pick<Section, 'avail' | 'cap'>) => s.avail > 0 || s.cap === 0;
 
 export function clash(a: Section, b: Section): boolean {
   if (a.course === b.course) return false;

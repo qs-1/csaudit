@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS watches (
   armed INTEGER NOT NULL,            -- 1: alert when the section opens
   alerts TEXT NOT NULL DEFAULT '[]', -- recent alert times, for the hourly cap
   last_alert INTEGER,
+  test INTEGER,                      -- 1: the next check sends an alert whatever the count ("Test a real alert")
   created INTEGER NOT NULL,
   expires INTEGER NOT NULL,
   PRIMARY KEY (device, term, course, sec)

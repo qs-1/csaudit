@@ -21,9 +21,9 @@ type ScreenRoute = Exclude<Route, 'import'>;
 const NAV: { id: ScreenRoute; label: string; icon: LucideIcon }[] = [
   { id: 'overview', label: 'Overview', icon: LayoutGrid },
   { id: 'planner', label: 'Planner', icon: CalendarRange },
+  { id: 'seats', label: 'Seats', icon: Bell },
   { id: 'gpa', label: 'GPA', icon: TrendingUp },
   { id: 'transcript', label: 'Transcript', icon: FileText },
-  { id: 'seats', label: 'Seats', icon: Bell },
   // Docs is hidden until it's tidied up; its screen stays in features/docs.
 ];
 
