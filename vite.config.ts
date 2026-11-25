@@ -18,12 +18,17 @@ export default defineConfig({
         // The course catalogues are several MB each: opened from the network, not stored for offline use.
         globIgnores: ['**/docs/catalogue-*.pdf'],
         navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/docs\//],
         cleanupOutdatedCaches: true,
         clientsClaim: true,
+        // Seat alert notifications (public/push-sw.js). /api is never cached: it's live data.
+        importScripts: ['push-sw.js'],
+        navigateFallbackDenylist: [/^\/docs\//, /^\/api\//],
       },
     }),
   ],
+  // The seats Worker in development (cd seats && npm run dev). In production vercel.json proxies /api.
+  server: { proxy: { '/api': 'http://127.0.0.1:8787' } },
+  preview: { proxy: { '/api': 'http://127.0.0.1:8787' } },
   resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
   build: {
     target: 'es2022',

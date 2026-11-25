@@ -8,6 +8,7 @@ import { applyPalette, storedPalette } from './lib/palette';
 import { decodePlan } from './engine/share';
 import { TERMS } from './data/registry';
 import { actions, useStore } from './state/store';
+import { seats } from './lib/seats';
 
 applyPalette(storedPalette());
 
@@ -41,6 +42,13 @@ if (import.meta.env.PROD) {
       apply();
     },
   });
+}
+
+// Seat alerts: load this device's watches so the planner knows which sections are watched, and send a renewed
+// push subscription if the browser replaced it (iOS does this now and then).
+if (seats.hasDevice()) {
+  void seats.refresh();
+  if (import.meta.env.PROD) void seats.resync();
 }
 
 createRoot(document.getElementById('root')!).render(

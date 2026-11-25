@@ -73,6 +73,8 @@ export interface Meeting { days: string; start: number | null; end: number | nul
 export interface Section {
   course: string; sec: string; title: string; credits: number;
   meetings: Meeting[]; instructor: string; avail: number; cap: number;
+  /** When the seat alerts poller last saw these counts (ms). Absent: counts are from the hourly snapshot. */
+  live?: number;
 }
 export interface Term {
   id: string;

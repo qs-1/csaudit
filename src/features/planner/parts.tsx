@@ -6,12 +6,14 @@ import { toast } from 'sonner';
 import { blocksFor, DAY_LONG, DAY_SHORT, hasSeats, hm, sid, type Day, type Policy, type Section, type Zone } from '@/engine';
 import { useIsMobile } from '@/lib/hooks';
 import { cn, plural } from '@/lib/utils';
+import { TERMS } from '@/data/registry';
 import type { Model } from '@/state/model';
 import { actions } from '@/state/store';
 import { ui, useUI } from '@/state/ui';
 import { Button } from '@/ui/button';
 import { Card, Code } from '@/ui/card';
 import { Sheet } from '@/ui/sheet';
+import { WatchButton } from '@/features/seats/WatchButton';
 import { hasSeatCounts, REGISTERED, roleTag, SectionRow } from './CourseSearch';
 import { colorVar, onVar, preview, removeFromPlan, restoreToPlan, type PlanState } from './usePlan';
 
@@ -205,9 +207,12 @@ export function SectionSheet({ m, p }: { m: Model; p: PlanState }) {
           <dl className="mt-5 grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
             <dt className="text-fg-3">Instructor</dt><dd className="text-fg">{s.instructor || 'Staff'}</dd>
             <dt className="text-fg-3">Credits</dt><dd className="num text-fg">{s.credits}</dd>
-            {showSeats ? <><dt className="text-fg-3">Seats</dt><dd className={cn('num', full ? 'text-bad' : 'text-fg')}>{full ? `Full · 0 of ${s.cap}` : `${s.avail} of ${s.cap} open`}</dd></> : null}
+            {showSeats ? <><dt className="text-fg-3">Seats</dt><dd className={cn('num', full ? 'text-bad' : 'text-fg')}>{full ? `Full · 0 of ${s.cap}` : `${s.avail} of ${s.cap} open`}{s.live ? <span className="text-fg-3"> · live</span> : null}</dd></> : null}
             {role ? <><dt className="text-fg-3">Counts as</dt><dd className={cn(role.tone === 'bad' ? 'text-bad' : role.tone === 'warn' ? 'text-warn' : 'text-fg')}>{role.text}</dd></> : null}
           </dl>
+
+          {/* Seat alerts: only for the term whose registration is open (the newest one has seat counts). */}
+          {showSeats && p.termId === TERMS[TERMS.length - 1]?.id ? <div className="mt-5"><WatchButton term={p.termId} s={s} /></div> : null}
 
           {others.length ? (
             <>

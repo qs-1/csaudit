@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 
-export const ROUTES = ['import', 'overview', 'planner', 'gpa', 'transcript', 'docs'] as const;
+export const ROUTES = ['import', 'overview', 'planner', 'gpa', 'transcript', 'seats', 'docs'] as const;
 export type Route = (typeof ROUTES)[number];
 
 const read = (): Route => {
