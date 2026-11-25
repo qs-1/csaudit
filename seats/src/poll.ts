@@ -2,7 +2,7 @@
 // Free plan limits per run: 10 ms CPU, 50 outgoing requests, 50 database queries. Each run stays well inside them.
 
 import { EmpowerError, getList, openSession, type Seat, type Session } from './empower';
-import { backoff, diffDept, freshPoller, gap, MIN, pickDepts, pruneTerm, recordTime, step, type PollerState, type TermCounts } from './logic';
+import { ANY, backoff, diffDept, newSections, freshPoller, gap, MIN, pickDepts, pruneTerm, recordTime, step, type PollerState, type TermCounts } from './logic';
 import { send, type Vapid } from './webpush';
 
 export interface Env {
@@ -82,20 +82,38 @@ export async function drainOutbox(env: Env, now: number, rows?: Due[]): Promise<
 
 /**
  * Applies one department's fresh counts to its watches and queues alerts. Reads only the watches that could move:
- * sections that crossed between full and open, and watches made since the last check. One query, one batch.
+ * sections that crossed between full and open, course watches on courses with a new section, and watches made since
+ * the last check. One query, one batch.
  */
 async function apply(db: D1Database, term: string, dept: string, seats: Seat[], counts: TermCounts, newest: number, now: number, writes: D1PreparedStatement[]): Promise<number> {
   const d = diffDept(counts[dept], seats, now);
   counts[dept] = d.next;
-  if (d.since && !d.crossed.length && newest <= d.since) return 0; // nothing that could move a watch
+  if (d.since && !d.crossed.length && !d.added.length && newest <= d.since) return 0; // nothing that could move a watch
+  const addedCourses = [...new Set(d.added.map((k) => k.split('|')[0]))];
   const { results: watches } = await db.prepare(`SELECT device, course, sec, armed, alerts, test FROM watches
-      WHERE term = ? AND dept = ? AND expires > ? AND (? = 0 OR created > ? OR test = 1 OR course || '|' || sec IN (SELECT value FROM json_each(?)))`)
-    .bind(term, dept, now, d.since, d.since, JSON.stringify(d.crossed))
+      WHERE term = ? AND dept = ? AND expires > ? AND (? = 0 OR created > ? OR test = 1 OR course || '|' || sec IN (SELECT value FROM json_each(?))
+        OR (sec = '*' AND course IN (SELECT value FROM json_each(?))))`)
+    .bind(term, dept, now, d.since, d.since, JSON.stringify(d.crossed), JSON.stringify(addedCourses))
     .all<{ device: string; course: string; sec: string; armed: number; alerts: string; test: number | null }>();
 
   let alerts = 0;
   const queue: D1PreparedStatement[] = [];
+  const push = (device: string, tag: string, title: string, body: string) => queue.push(db.prepare('INSERT INTO outbox (device, message, topic, next, expires) VALUES (?, ?, ?, ?, ?)')
+    .bind(device, JSON.stringify({ title, body, url: '/#/seats', tag: `${term}-${tag}` }), `${term}${tag}`.replace(/[^A-Za-z0-9]/g, ''), now, now + ALERT_TTL));
   for (const w of watches) {
+    if (w.test) writes.push(db.prepare('UPDATE watches SET test = NULL WHERE device = ? AND term = ? AND course = ? AND sec = ?').bind(w.device, term, w.course, w.sec));
+    if (w.sec === ANY) {
+      const r = newSections(d.added, d.next.s, w.course, JSON.parse(w.alerts) as number[], now);
+      if (r.open.length) {
+        alerts++;
+        writes.push(db.prepare('UPDATE watches SET alerts = ?, last_alert = ? WHERE device = ? AND term = ? AND course = ? AND sec = ?')
+          .bind(JSON.stringify(r.alerts), now, w.device, term, w.course, w.sec));
+        const secs = r.open.map((k) => k.split('|')[1]!);
+        const [avail, cap] = d.next.s[r.open[0]!]!;
+        push(w.device, `${w.course}-new`, secs.length === 1 ? `${w.course} ${secs[0]}: new section, ${avail} of ${cap} open` : `${w.course}: ${secs.length} new sections, ${secs.join(', ')}`, `At ${clock(now)}`);
+      } else if (w.test) push(w.device, `${w.course}-new`, `${w.course}: no new sections yet`, `Test alert at ${clock(now)}`);
+      continue;
+    }
     const s = d.next.s[`${w.course}|${w.sec}`];
     if (!s) continue; // section dropped from the catalog; the app shows it as missing
     const [avail, cap] = s;
@@ -104,15 +122,8 @@ async function apply(db: D1Database, term: string, dept: string, seats: Seat[], 
       writes.push(db.prepare('UPDATE watches SET armed = ?, alerts = ?, last_alert = COALESCE(?, last_alert) WHERE device = ? AND term = ? AND course = ? AND sec = ?')
         .bind(r.next.armed ? 1 : 0, JSON.stringify(r.next.alerts), r.alert ? now : null, w.device, term, w.course, w.sec));
     }
-    if (w.test) writes.push(db.prepare('UPDATE watches SET test = NULL WHERE device = ? AND term = ? AND course = ? AND sec = ?').bind(w.device, term, w.course, w.sec));
-    if (r.alert || w.test) {
-      if (r.alert) alerts++;
-      queue.push(db.prepare('INSERT INTO outbox (device, message, topic, next, expires) VALUES (?, ?, ?, ?, ?)').bind(
-        w.device,
-        JSON.stringify({ title: `${w.course} ${w.sec}: ${avail} of ${cap} open`, body: `${r.alert ? 'At' : 'Test alert at'} ${clock(now)}`, url: '/#/seats', tag: `${term}-${w.course}-${w.sec}` }),
-        `${term}${w.course}${w.sec}`, now, now + ALERT_TTL,
-      ));
-    }
+    if (r.alert) alerts++;
+    if (r.alert || w.test) push(w.device, `${w.course}-${w.sec}`, `${w.course} ${w.sec}: ${avail} of ${cap} open`, `${r.alert ? 'At' : 'Test alert at'} ${clock(now)}`);
   }
   // Shuffled so the same people aren't always first when one seat opens for many watchers.
   writes.push(...shuffle(queue));

@@ -68,20 +68,29 @@ export function pickDepts(watched: string[], lastPolled: Record<string, number>,
 /** Counts older than this aren't shown as live, and a department checked longer ago than this is re-read in full. */
 export const FRESH = 10 * MIN;
 
-/** A department's last check: when, and each section's [avail, cap, last change]. Keyed "COURSE 100|A". */
-export interface DeptCounts { at: number; s: Record<string, [avail: number, cap: number, changed: number]> }
+/**
+ * A department's last check: when, each section's [avail, cap, last change], and every section key seen in it so far
+ * (`k`), so a section that drops out of one response and comes back isn't taken for a new one. Keyed "COURSE 100|A".
+ */
+export interface DeptCounts { at: number; s: Record<string, [avail: number, cap: number, changed: number]>; k?: string[] }
 /** A term's counts by department, stored as one row. */
 export type TermCounts = Record<string, DeptCounts>;
+
+/** The `sec` of a watch on a whole course: it alerts when the course gets a new section with seats. */
+export const ANY = '*';
 
 /**
  * Compares a check with the department's previous one. Only sections that crossed between full and open can move a
  * watch, so `crossed` lists those. `since` is the previous check's time: watches made after it haven't been looked
- * at yet. With no recent previous check, `since` is 0 and every watch in the department is read.
+ * at yet. With no recent previous check, `since` is 0 and every watch in the department is read. `added` lists
+ * sections never seen in the department before; with no previous check at all nothing counts as added.
  */
 export function diffDept(prev: DeptCounts | undefined, seats: { course: string; sec: string; avail: number; cap: number }[], now: number) {
   const recent = prev && now - prev.at < FRESH ? prev : undefined;
+  const known = new Set(prev ? prev.k ?? Object.keys(prev.s) : []);
   const next: DeptCounts = { at: now, s: {} };
   const crossed: string[] = [];
+  const added: string[] = [];
   let changed = 0;
   for (const x of seats) {
     const key = `${x.course}|${x.sec}`;
@@ -90,8 +99,19 @@ export function diffDept(prev: DeptCounts | undefined, seats: { course: string; 
     if (!same) changed++;
     next.s[key] = [x.avail, x.cap, same ? b[2] : now];
     if (recent && (!b || (b[0] <= 0) !== (x.avail <= 0))) crossed.push(key);
+    if (prev && !known.has(key)) added.push(key);
+    known.add(key);
   }
-  return { next, crossed, since: recent ? recent.at : 0, changed };
+  next.k = [...known];
+  return { next, crossed, added, since: recent ? recent.at : 0, changed };
+}
+
+/** Whether a course watch alerts for sections new in this check: those with seats, within the hourly cap. */
+export function newSections(added: string[], s: DeptCounts['s'], course: string, alerts: number[], now: number) {
+  const recent = alerts.filter((t) => now - t < 60 * MIN);
+  const open = added.filter((k) => k.startsWith(`${course}|`) && (s[k]?.[0] ?? 0) > 0);
+  if (!open.length || recent.length >= ALERTS_PER_HOUR) return { open: [] as string[], alerts: recent };
+  return { open, alerts: [...recent, now] };
 }
 
 /** Drops departments nobody has checked in two days. */

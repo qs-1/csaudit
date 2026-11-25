@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { deptOf, findToken, listBody, parseSeats } from '../seats/src/empower';
-import { ALERTS_PER_HOUR, armedFor, backoff, diffDept, FRESH, freshPoller, gap, MIN, pickDepts, pruneTerm, recordTime, step, type WatchState } from '../seats/src/logic';
+import { ALERTS_PER_HOUR, armedFor, backoff, diffDept, FRESH, freshPoller, gap, MIN, newSections, pickDepts, pruneTerm, recordTime, step, type WatchState } from '../seats/src/logic';
 import { b64u, encrypt, unb64u, vapidJwt } from '../seats/src/webpush';
 
 const fixture = (name: string) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
@@ -100,6 +100,27 @@ describe('department diff', () => {
   it('counts a section new to a recent check as crossed', () => {
     const a = diffDept(undefined, [sec('A', 0)], t0);
     expect(diffDept(a.next, [sec('A', 0), sec('D', 0)], t0 + MIN).crossed).toEqual(['MATH 107|D']);
+  });
+
+  it('finds sections never seen before, even after a gap', () => {
+    const a = diffDept(undefined, [sec('A', 0)], t0);
+    expect(a.added).toEqual([]); // a first check knows nothing yet
+    expect(diffDept(a.next, [sec('A', 0), sec('F', 30)], t0 + FRESH * 3).added).toEqual(['MATH 107|F']);
+  });
+
+  it('does not take a section that dropped out of one response for a new one', () => {
+    const a = diffDept(undefined, [sec('A', 0), sec('B', 0)], t0);
+    const b = diffDept(a.next, [sec('A', 0)], t0 + MIN);
+    expect(b.added).toEqual([]);
+    expect(diffDept(b.next, [sec('A', 0), sec('B', 2)], t0 + 2 * MIN).added).toEqual([]);
+  });
+
+  it('alerts a course watch for new sections with seats, within the hourly cap', () => {
+    const s = { 'MATH 107|F': [30, 35, t0] as [number, number, number], 'MATH 107|G': [0, 35, t0] as [number, number, number] };
+    expect(newSections(['MATH 107|F', 'MATH 107|G', 'COMP 421|C'], s, 'MATH 107', [], t0)).toEqual({ open: ['MATH 107|F'], alerts: [t0] });
+    expect(newSections(['MATH 107|G'], s, 'MATH 107', [], t0).open).toEqual([]);
+    const full = Array.from({ length: ALERTS_PER_HOUR }, (_, i) => t0 - i * MIN);
+    expect(newSections(['MATH 107|F'], s, 'MATH 107', full, t0).open).toEqual([]);
   });
 
   it('drops departments not checked in two days', () => {

@@ -2,7 +2,7 @@ import { Bell } from 'lucide-react';
 import { toast } from 'sonner';
 import { hasSeats, type Section } from '@/engine';
 import { go } from '@/lib/route';
-import { isWatching, seats, useSeats } from '@/lib/seats';
+import { ANY, isWatching, seats, useSeats } from '@/lib/seats';
 import { cn } from '@/lib/utils';
 
 type Sec = Pick<Section, 'course' | 'sec' | 'avail' | 'cap'>;
@@ -20,6 +20,15 @@ export function toggleWatch(term: string, s: Sec) {
   if (isWatching(watches, term, s.course, s.sec)) { seats.unwatch({ term, course: s.course, sec: s.sec }).catch(fail); return; }
   if (hasSeats(s)) { toast(`${s.course} ${s.sec} has seats. Register on Empower.`); return; }
   seats.watch(term, s.course, s.sec, s.avail).catch(fail);
+  if (push !== 'on') go('seats');
+}
+
+/** Adds or removes a watch for new sections of a course. */
+export function toggleCourseWatch(term: string, course: string) {
+  const { watches, push } = useSeats.getState();
+  const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
+  if (isWatching(watches, term, course, ANY)) { seats.unwatch({ term, course, sec: ANY }).catch(fail); return; }
+  seats.watch(term, course, ANY, 0).catch(fail);
   if (push !== 'on') go('seats');
 }
 

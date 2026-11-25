@@ -10,14 +10,14 @@ import { hasSeats, type Section } from '@/engine';
 import { DaySquares, DeptPicker, timeLines } from '@/features/planner/CourseSearch';
 import { usePlan, type PlanState } from '@/features/planner/usePlan';
 import { useDebounced, useIsMobile } from '@/lib/hooks';
-import { isWatching, pushSupport, seats, useLiveSeats, useSeats, useWatchPolling, WATCHES_MAX, type Watch } from '@/lib/seats';
+import { ANY, isWatching, pushSupport, seats, useLiveSeats, useSeats, useWatchPolling, WATCHES_MAX, type Watch } from '@/lib/seats';
 import { cn } from '@/lib/utils';
 import { overlayLive, useModel, useTermData, type Model } from '@/state/model';
 import { Button } from '@/ui/button';
 import { Card, CardHead, Code } from '@/ui/card';
 import { Chip, Switch } from '@/ui/controls';
 import { Sheet } from '@/ui/sheet';
-import { toggleWatch, WatchBell } from './Bell';
+import { toggleCourseWatch, toggleWatch, WatchBell } from './Bell';
 
 const EMPOWER = 'https://mysis-fccollege.empower-xl.com/';
 const OPEN = TERMS[TERMS.length - 1]!;
@@ -109,6 +109,35 @@ function useNotifications(): { on: boolean; note: ReactNode; action: ReactNode }
 
 /* ---------- Watching ---------- */
 
+function CourseWatchRow({ w, secs }: { w: Watch; secs: Section[] }) {
+  const open = secs.filter(hasSeats).length;
+  return (
+    <li className="py-4">
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <Code className="text-md font-medium">{w.course}</Code>
+          <p className="truncate text-sm text-fg-3">{secs[0]?.title ?? 'Not in the section list'}</p>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className="num text-[24px] font-medium leading-7 tracking-[-0.02em]">{secs.length}</p>
+          <p className="whitespace-nowrap text-xs text-fg-3">{secs.length === 1 ? 'section' : 'sections'}{open ? `, ${open} open` : ', all full'}</p>
+        </div>
+        <button
+          type="button"
+          aria-label={`Stop watching ${w.course} for new sections`}
+          onClick={() => toggleCourseWatch(w.term, w.course)}
+          className="-mr-2 grid size-8 shrink-0 place-items-center rounded-[9px] text-fg transition-colors hover:bg-fg/[0.06] active:scale-[0.94]"
+        >
+          <Bell className="size-4" strokeWidth={1.75} fill="currentColor" />
+        </button>
+      </div>
+      <p className="mt-2.5 text-xs text-fg-2">
+        New sections with seats <span className="num text-fg-3">· now {secs.map((x) => x.sec).join(' ') || 'none'}</span>
+      </p>
+    </li>
+  );
+}
+
 function WatchRow({ w, s, now }: { w: Watch; s?: Section; now: number }) {
   const fresh = w.avail !== null && w.seen !== null && now - w.seen < FRESH;
   const avail = fresh ? w.avail! : s?.avail ?? null;
@@ -147,7 +176,7 @@ function WatchRow({ w, s, now }: { w: Watch; s?: Section; now: number }) {
   );
 }
 
-function Watching({ byKey, now, mobile }: { byKey: Map<string, Section>; now: number; mobile: boolean }) {
+function Watching({ byKey, byCourse, now, mobile }: { byKey: Map<string, Section>; byCourse: Map<string, Section[]>; now: number; mobile: boolean }) {
   const loaded = useSeats((s) => s.loaded);
   const watches = useSeats((s) => s.watches);
   const error = useSeats((s) => s.error);
@@ -164,7 +193,9 @@ function Watching({ byKey, now, mobile }: { byKey: Map<string, Section>; now: nu
         {!loaded ? <p className="py-6 text-sm text-fg-3">Loading</p>
           : watches.length ? (
             <ul className="mt-1 divide-y divide-line">
-              {watches.map((w) => <WatchRow key={`${w.term}|${key(w)}`} w={w} s={w.term === OPEN.id ? byKey.get(key(w)) : undefined} now={now} />)}
+              {watches.map((w) => (w.sec === ANY
+                ? <CourseWatchRow key={`${w.term}|${key(w)}`} w={w} secs={w.term === OPEN.id ? byCourse.get(w.course) ?? [] : []} />
+                : <WatchRow key={`${w.term}|${key(w)}`} w={w} s={w.term === OPEN.id ? byKey.get(key(w)) : undefined} now={now} />))}
             </ul>
           ) : (
             <div className="pb-2 pt-6">
@@ -318,11 +349,12 @@ function Find({ sections, p, className }: { sections: Section[] | null; p: PlanS
         ) : (
           <ul className="flex flex-col gap-4">
             {results.slice(0, limit).map((c) => (
-              <li key={c.code}>
-                <p className="flex items-baseline gap-2 px-1 pb-1.5">
+              <li key={c.code} className="group/course">
+                <div className="flex items-center gap-2 pb-1 pl-1">
                   <Code className="text-sm font-medium">{c.code}</Code>
-                  <span className="truncate text-sm text-fg-3">{c.title}</span>
-                </p>
+                  <span className="min-w-0 flex-1 truncate text-sm text-fg-3">{c.title}</span>
+                  <NewSections course={c.code} />
+                </div>
                 <ul className="flex flex-col gap-1.5">
                   {c.secs.map((s) => <SectionItem key={key(s)} s={s} />)}
                 </ul>
@@ -337,6 +369,26 @@ function Find({ sections, p, className }: { sections: Section[] | null; p: PlanS
 }
 
 /** One section: tap a full one to watch it. One with seats shows its count instead of a bell. */
+/** Toggles alerts for new sections of a course. */
+function NewSections({ course }: { course: string }) {
+  const on = useSeats((x) => isWatching(x.watches, OPEN.id, course, ANY));
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      onClick={() => toggleCourseWatch(OPEN.id, course)}
+      className={cn(
+        'inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg px-2 text-xs transition-[color,background-color,opacity] hover:bg-fg/[0.06]',
+        // With a mouse it shows on the course's hover, so twenty of them don't line the list.
+        on ? 'text-fg' : 'text-fg-3 hover:text-fg [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:focus-visible:opacity-100 [@media(hover:hover)]:group-hover/course:opacity-100',
+      )}
+    >
+      <Bell className="size-3.5" strokeWidth={1.75} fill={on ? 'currentColor' : 'none'} />
+      New sections
+    </button>
+  );
+}
+
 function SectionItem({ s, code }: { s: Section; code?: boolean }) {
   const on = useSeats((x) => isWatching(x.watches, OPEN.id, s.course, s.sec));
   const full = !hasSeats(s);
@@ -351,7 +403,7 @@ function SectionItem({ s, code }: { s: Section; code?: boolean }) {
         <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-fg-3">
           <span>{s.instructor || 'Staff'}</span>
           <span aria-hidden>·</span>
-          <span className={cn('num', !full && 'text-good')}>{full ? `Full · 0/${s.cap}` : `${s.avail} of ${s.cap} open`}</span>
+          <span className="num">{full ? `Full · 0/${s.cap}` : `${s.avail}/${s.cap} seats`}</span>
         </span>
       </span>
     </>
@@ -388,6 +440,11 @@ function Page({ p }: { p: PlanState | null }) {
   const now = useNow();
   const sections = useOpenSections();
   const byKey = useMemo(() => new Map((sections ?? []).map((s) => [key(s), s])), [sections]);
+  const byCourse = useMemo(() => {
+    const m = new Map<string, Section[]>();
+    for (const s of sections ?? []) m.set(s.course, [...(m.get(s.course) ?? []), s]);
+    return m;
+  }, [sections]);
   const [adding, setAdding] = useState(false);
   useWatchPolling();
 
@@ -396,7 +453,7 @@ function Page({ p }: { p: PlanState | null }) {
       <>
         <ScreenHeader eyebrow={OPEN.label} title="Seats" mobileActions={<MoreMenu mobile />} />
         <div className="flex flex-col gap-5">
-          <Watching byKey={byKey} now={now} mobile />
+          <Watching byKey={byKey} byCourse={byCourse} now={now} mobile />
           {p ? <YourPlan p={p} /> : null}
           <div className="h-12" aria-hidden />
         </div>
@@ -424,7 +481,7 @@ function Page({ p }: { p: PlanState | null }) {
       <ScreenHeader eyebrow={OPEN.label} title="Seats" actions={<MoreMenu />} />
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_400px]">
         <div className="flex min-w-0 flex-col gap-6">
-          <Watching byKey={byKey} now={now} mobile={false} />
+          <Watching byKey={byKey} byCourse={byCourse} now={now} mobile={false} />
           {p ? <YourPlan p={p} /> : null}
         </div>
         <Card className="flex h-[calc(100dvh-152px)] min-h-[420px] flex-col p-5 lg:sticky lg:top-6 md:p-6">

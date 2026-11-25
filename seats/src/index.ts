@@ -4,7 +4,7 @@
 // without it still sees its watches update in the app.
 
 import { deptOf, getList, openSession } from './empower';
-import { armedFor, FRESH, MIN, type TermCounts } from './logic';
+import { ANY, armedFor, FRESH, MIN, type TermCounts } from './logic';
 import { run, vapid, type Env } from './poll';
 import { send } from './webpush';
 
@@ -126,8 +126,8 @@ async function testPush(env: Env, d: Device) {
 }
 
 /**
- * A real alert through the whole path: re-arms one of this device's open watched sections and marks it new, so the
- * next poll reads it, sees seats and queues a push like any reopening. Only this device's watch changes.
+ * A real alert through the whole path: marks this device's newest watch, so its department's next check reads it and
+ * queues a push through the outbox like a real alert. Only this device's watch changes.
  */
 async function liveTest(env: Env, d: Device) {
   if (!d.endpoint || d.push_dead) return fail(409, 'Turn on notifications first');
@@ -135,7 +135,6 @@ async function liveTest(env: Env, d: Device) {
   const key = `livetest:${d.id}`;
   const last = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(key).first<{ v: string }>();
   if (last && now - Number(last.v) < 5 * MIN) return fail(429, 'One test every 5 minutes');
-  // Any watch will do: its next check sends an alert whatever the count, which runs the whole path a real one takes.
   const w = await env.DB.prepare('SELECT term, course, sec FROM watches WHERE device = ? AND expires > ? ORDER BY created DESC LIMIT 1')
     .bind(d.id, now).first<{ term: string; course: string; sec: string }>();
   if (!w) return fail(409, 'Watch a section first');
@@ -179,18 +178,19 @@ async function addWatch(req: Request, env: Env, d: Device) {
   if (typeof b?.term !== 'string' || typeof b.course !== 'string' || typeof b.sec !== 'string') return fail(400, 'Send term, course and sec');
   const idx = await sectionsIndex(env);
   if (!idx.terms.includes(b.term)) return fail(400, `${b.term} isn't open for alerts`);
-  if (!idx.sections[b.term]?.[b.course]?.includes(b.sec)) return fail(400, `${b.course} ${b.sec} isn't in the ${b.term} list`);
+  const any = b.sec === ANY; // the whole course: alert on a new section
+  if (any ? !idx.sections[b.term]?.[b.course] : !idx.sections[b.term]?.[b.course]?.includes(b.sec)) return fail(400, `${b.course}${any ? '' : ` ${b.sec}`} isn't in the ${b.term} list`);
   const now = Date.now();
   const count = await env.DB.prepare('SELECT COUNT(*) AS n FROM watches WHERE device = ? AND expires > ?').bind(d.id, now).first<{ n: number }>();
-  if (count!.n >= WATCHES_MAX) return fail(409, `You can watch up to ${WATCHES_MAX} sections`);
+  if (count!.n >= WATCHES_MAX) return fail(409, `You can watch up to ${WATCHES_MAX} at once`);
   // Armed if the section is full: by the poller's count when it's fresh, else by what the app showed.
   const dc = (await termCounts(env, b.term))[deptOf(b.course)];
   const c = dc && now - dc.at < FRESH ? dc.s[`${b.course}|${b.sec}`] : undefined;
   const avail = c ? c[0] : Number.isInteger(b.avail) ? (b.avail as number) : null;
-  if (c && c[0] > 0) return fail(409, `${b.course} ${b.sec} has ${c[0]} open. Register on Empower.`);
+  if (!any && c && c[0] > 0) return fail(409, `${b.course} ${b.sec} has ${c[0]} open. Register on Empower.`);
   await env.DB.prepare(`INSERT INTO watches (device, term, course, sec, dept, armed, created, expires) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT (device, term, course, sec) DO UPDATE SET expires = excluded.expires`)
-    .bind(d.id, b.term, b.course, b.sec, deptOf(b.course), armedFor(avail) ? 1 : 0, now, now + WATCH_DAYS * 24 * 60 * MIN).run();
+    .bind(d.id, b.term, b.course, b.sec, deptOf(b.course), any || armedFor(avail) ? 1 : 0, now, now + WATCH_DAYS * 24 * 60 * MIN).run();
   return listWatches(env, d);
 }
 

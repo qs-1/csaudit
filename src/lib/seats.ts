@@ -91,6 +91,8 @@ async function ensureDevice(sub?: PushSubscriptionJSON): Promise<Device> {
 
 /** Most sections one device can watch; the Worker enforces the same. */
 export const WATCHES_MAX = 15;
+/** The `sec` of a watch on a whole course: alerts when the course gets a new section with seats. */
+export const ANY = '*';
 
 /* ---------- Shared state for the Seats screen and the watch buttons ---------- */
 
