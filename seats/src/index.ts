@@ -139,12 +139,13 @@ async function liveTest(env: Env, d: Device) {
     .all<{ term: string; course: string; sec: string; dept: string }>();
   const counts: Record<string, TermCounts> = {};
   for (const t of new Set(results.map((w) => w.term))) counts[t] = await termCounts(env, t);
-  const open = results.find((w) => {
+  // A watch with seats by the last check, else one not checked yet (its first check decides).
+  const seatsOf = (w: (typeof results)[number]) => {
     const dc = counts[w.term]?.[w.dept];
-    const c = dc && now - dc.at < FRESH ? dc.s[`${w.course}|${w.sec}`] : undefined;
-    return c && c[0] > 0;
-  });
-  if (!open) return fail(409, 'Watch a section with open seats, wait a minute, then try again');
+    return dc && now - dc.at < FRESH ? dc.s[`${w.course}|${w.sec}`]?.[0] ?? null : null;
+  };
+  const open = results.find((w) => (seatsOf(w) ?? 0) > 0) ?? results.find((w) => seatsOf(w) === null);
+  if (!open) return fail(409, 'Watch a section that has seats first');
   await env.DB.batch([
     env.DB.prepare('UPDATE watches SET armed = 1, alerts = ?, created = ? WHERE device = ? AND term = ? AND course = ? AND sec = ?').bind('[]', now, d.id, open.term, open.course, open.sec),
     env.DB.prepare('INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v').bind(key, String(now)),
