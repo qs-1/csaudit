@@ -78,8 +78,6 @@ function MoreMenu({ mobile }: { mobile?: boolean }) {
       <Menu.Portal>
         <Menu.Content align="end" sideOffset={8} className="z-50 min-w-[220px] rounded-xl bg-surface p-1 shadow-pop data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-top-1">
           {push === 'on' ? <>
-            <Menu.Item className={item} onSelect={() => void seats.test().then(() => toast('Test sent'), fail)}>Send test</Menu.Item>
-            <Menu.Item className={item} onSelect={() => void seats.liveTest().then((r) => r && toast(`${r.course} ${r.sec}: test alert within 2 minutes`), fail)}>Test a real alert</Menu.Item>
             <Menu.Item className={item} onSelect={() => void seats.disablePush().catch(fail)}>Turn off notifications</Menu.Item>
             <Menu.Separator className="mx-2 my-1 h-px bg-line" />
           </> : null}
@@ -226,32 +224,15 @@ function Watching({ byKey, byCourse, now, mobile }: { byKey: Map<string, Section
   );
 }
 
-/* ---------- Your plan: the sections picked in the planner, with their counts ---------- */
-
-function YourPlan({ p }: { p: PlanState }) {
-  const chosen = useMemo(() => [...p.chosen].sort((a, b) => a.course.localeCompare(b.course)), [p.chosen]);
-  if (!chosen.length) return null;
-  const full = chosen.filter((s) => !hasSeats(s)).length;
-  return (
-    <Card>
-      <CardHead title="Your plan" sub={`${chosen.length} sections · ${full ? `${full} full` : 'none full'}`} />
-      <ul className="flex flex-col gap-1.5 px-3 pb-3 pt-3 md:px-4 md:pb-4">
-        {chosen.map((s) => <SectionItem key={key(s)} s={s} code />)}
-      </ul>
-    </Card>
-  );
-}
-
 /* ---------- Find: browse and search the open term's sections ---------- */
 
 const normalise = (q: string) => q.trim().replace(/([a-z])(\d)/gi, '$1 $2');
-type Show = 'full' | 'plan' | 'all';
+type Show = 'full' | 'all';
 
 function Find({ sections, p, className }: { sections: Section[] | null; p: PlanState | null; className?: string }) {
   const [query, setQuery] = useState('');
   const q = useDebounced(query, 80);
-  const planned = !!p?.chosen.length;
-  const [show, setShow] = useState<Show>(planned ? 'plan' : 'full');
+  const [show, setShow] = useState<Show>('full');
   const [dept, setDept] = useState('');
   const [fits, setFits] = useState(false);
   const [limit, setLimit] = useState(PAGE);
@@ -281,13 +262,11 @@ function Find({ sections, p, className }: { sections: Section[] | null; p: PlanS
 
   const counts = useMemo(() => ({
     full: (sections ?? []).filter((s) => !hasSeats(s)).length,
-    plan: (sections ?? []).filter((s) => inPlan.has(s.course)).length,
     all: sections?.length ?? 0,
   }), [sections, inPlan]);
 
   const results = useMemo(() => {
     let pool = courses;
-    if (show === 'plan') pool = pool.filter((c) => inPlan.has(c.code));
     if (dept) pool = pool.filter((c) => c.code.startsWith(`${dept} `));
     const nq = normalise(q);
     if (nq) pool = fuzzysort.go(nq, pool, { keys: ['key', 'who'], threshold: 0.3, limit: 200 }).map((r) => r.obj);
@@ -326,7 +305,6 @@ function Find({ sections, p, className }: { sections: Section[] | null; p: PlanS
 
       <div className="no-scrollbar -mx-5 mt-3 flex gap-1.5 overflow-x-auto px-5 md:-mx-6 md:px-6">
         <Chip on={show === 'full'} onClick={() => setShow('full')} count={counts.full}>Full</Chip>
-        {planned ? <Chip on={show === 'plan'} onClick={() => setShow('plan')} count={counts.plan}>My plan</Chip> : null}
         <Chip on={show === 'all'} onClick={() => setShow('all')} count={counts.all}>All</Chip>
       </div>
 
@@ -454,7 +432,6 @@ function Page({ p }: { p: PlanState | null }) {
         <ScreenHeader eyebrow={OPEN.label} title="Seats" mobileActions={<MoreMenu mobile />} />
         <div className="flex flex-col gap-5">
           <Watching byKey={byKey} byCourse={byCourse} now={now} mobile />
-          {p ? <YourPlan p={p} /> : null}
           <div className="h-12" aria-hidden />
         </div>
         {createPortal(
@@ -482,7 +459,6 @@ function Page({ p }: { p: PlanState | null }) {
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_400px]">
         <div className="flex min-w-0 flex-col gap-6">
           <Watching byKey={byKey} byCourse={byCourse} now={now} mobile={false} />
-          {p ? <YourPlan p={p} /> : null}
         </div>
         <Card className="flex h-[calc(100dvh-152px)] min-h-[420px] flex-col p-5 lg:sticky lg:top-6 md:p-6">
           <h2 className="display mb-4 text-[21px] leading-7">Find a section</h2>
