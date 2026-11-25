@@ -13,5 +13,10 @@
     // Public half of the VAPID key pair (npm run vapid). The private half is the VAPID_JWK secret.
     "VAPID_PUBLIC": "BHMyq2JHIu5t8cF9PvcEhRjCfApmRy8UoY43WRbgY2z0f0RzbVxe6VUnUP2LoK_EXiVegEi5eteqzVhoclJd3eA"
   },
+  // Pushes fan out through a queue, 25 to a message, one message per run (see fanOut in poll.ts).
+  "queues": {
+    "producers": [{ "binding": "PUSHES", "queue": "fccu-pushes" }],
+    "consumers": [{ "queue": "fccu-pushes", "max_batch_size": 1, "max_batch_timeout": 0, "max_retries": 0 }]
+  },
   "d1_databases": [{ "binding": "DB", "database_name": "fccu-seats", "database_id": "27fa37f0-15a2-4bff-83ee-a1a294bfb5fb" }]
 }

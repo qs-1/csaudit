@@ -21,6 +21,8 @@ npx wrangler d1 create fccu-seats          # database_id goes in wrangler.jsonc
 npm run db:remote
 npm run vapid                              # VAPID_PUBLIC goes in wrangler.jsonc
 npx wrangler secret put VAPID_JWK          # paste the JSON line
+npx wrangler queues create fccu-pushes     # pushes fan out through it, 25 to a message
+npx wrangler secret put PROXY_KEY          # same value as SEATS_PROXY_KEY in the Vercel project
 npm run deploy
 ```
 

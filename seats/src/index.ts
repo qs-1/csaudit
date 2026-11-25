@@ -5,7 +5,7 @@
 
 import { deptOf, getList, openSession } from './empower';
 import { ANY, armedFor, FRESH, MIN, type TermCounts } from './logic';
-import { run, vapid, type Env } from './poll';
+import { run, sendBatch, vapid, type Env, type PushBatch } from './poll';
 import { send } from './webpush';
 
 const WATCHES_MAX = 15;
@@ -96,7 +96,7 @@ async function createDevice(req: Request, env: Env) {
     env.DB.prepare('SELECT COUNT(*) AS n FROM devices'),
     env.DB.prepare('SELECT n FROM signups WHERE who = ? AND day = ?').bind(who, day),
   ]);
-  if (((count!.results[0] as { n: number }).n) >= DEVICES_MAX) return fail(503, 'Seat alerts are full right now');
+  if (((count!.results[0] as { n: number }).n) >= DEVICES_MAX) return fail(503, 'Seat alerts are full. Try again in a few days.');
   if (((mine!.results[0] as { n: number } | undefined)?.n ?? 0) >= SIGNUPS_PER_DAY) return fail(429, 'Too many new devices from this network today. Try tomorrow.');
   await env.DB.batch([
     // The same browser subscribing again (cleared storage, new install) is a new device: its old row gives up the
@@ -283,4 +283,13 @@ export default {
   async scheduled(_c: ScheduledController, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(run(env).then((r) => console.log(JSON.stringify(r)), (e) => console.error('run failed', e)));
   },
-} satisfies ExportedHandler<Env>;
+
+  // One message per run (wrangler.jsonc): 25 pushes, inside the free plan's per-run limits.
+  async queue(batch: MessageBatch<PushBatch>, env: Env) {
+    for (const m of batch.messages) {
+      const n = await sendBatch(env, m.body).catch((e) => { console.error('batch failed', e); return 0; });
+      console.log(JSON.stringify({ batch: m.body.ids.length, sent: n }));
+      m.ack(); // never redelivered: anything unsent is still in the outbox and the cron sends it
+    }
+  },
+} satisfies ExportedHandler<Env, PushBatch>;

@@ -12,9 +12,15 @@ export interface Env {
   VAPID_JWK: string; // secret: the private key as a JWK
   VAPID_SUBJECT: string;
   PROXY_KEY?: string; // secret: sent by the site's proxy (middleware.ts); unset in local development
+  PUSHES?: Queue<PushBatch>; // pushes fanned out to their own runs; without it the cron sends them itself
 }
 
-const PUSH_MAX = 25; // pushes per run (~4 ms CPU and 25 requests)
+/** One queue message: outbox rows for one consumer run to send. */
+export interface PushBatch { ids: number[] }
+
+const PUSH_MAX = 25; // pushes per run (~4 ms CPU and 25 requests), in the cron and in each queue run
+const FANOUT_MAX = 2500; // pushes handed to the queue at once: 100 messages, one send
+const QUEUED_HOLD = 2 * MIN; // a queued push the cron leaves alone; if its queue run never comes, the cron sends it
 const DEPTS_MAX = 4; // departments per run when nothing is waiting to be sent
 const WALL_MS = 40_000; // start no new Empower request after this long, so runs never overlap
 const ALERT_TTL = 10 * MIN; // an alert older than this is dropped, not delivered late
@@ -51,6 +57,39 @@ const due = (db: D1Database, now: number, max = PUSH_MAX) => db.prepare(`SELECT 
     FROM outbox o JOIN devices d ON d.id = o.device
     WHERE o.next <= ? AND o.expires > ? AND d.endpoint IS NOT NULL AND d.push_dead IS NULL
     ORDER BY o.id LIMIT ?`).bind(now, now, max);
+
+const rowsById = (db: D1Database, now: number, ids: number[]) => db.prepare(`SELECT o.id, o.device, o.message, o.topic, o.tries, o.expires, d.endpoint, d.p256dh, d.auth
+    FROM outbox o JOIN devices d ON d.id = o.device
+    WHERE o.id IN (SELECT value FROM json_each(?)) AND o.expires > ? AND d.endpoint IS NOT NULL AND d.push_dead IS NULL`).bind(JSON.stringify(ids), now);
+
+/**
+ * Hands every due push to the queue, 25 to a message. Each message is its own run with its own CPU and request
+ * limits, and they run side by side, so 300 people watching one section all hear within seconds instead of over
+ * 12 minutes. 25 to a message keeps queue use at 3 operations per 25 pushes (the free plan has 10,000 a day).
+ * If the queue refuses (no queue, or the day's operations used up), nothing changes and the cron sends them 25 a minute.
+ */
+export async function fanOut(env: Env, now: number): Promise<number> {
+  if (!env.PUSHES) return 0;
+  const db = env.DB;
+  const ids = (await due(db, now, FANOUT_MAX).all<Due>()).results.map((r) => r.id);
+  if (!ids.length) return 0;
+  const batches: PushBatch[] = [];
+  for (let i = 0; i < ids.length; i += PUSH_MAX) batches.push({ ids: ids.slice(i, i + PUSH_MAX) });
+  try {
+    await env.PUSHES.sendBatch(batches.map((body) => ({ body })));
+  } catch (e) {
+    console.error('queue send failed', e);
+    return 0;
+  }
+  await db.prepare('UPDATE outbox SET next = ? WHERE id IN (SELECT value FROM json_each(?))').bind(now + QUEUED_HOLD, JSON.stringify(ids)).run();
+  return ids.length;
+}
+
+/** A queue run: sends one batch. A failed push is retried by the cron, like any other. */
+export async function sendBatch(env: Env, b: PushBatch, now = Date.now()): Promise<number> {
+  const rows = (await rowsById(env.DB, now, b.ids.slice(0, PUSH_MAX)).all<Due>()).results;
+  return rows.length ? drainOutbox(env, now, rows) : 0;
+}
 
 /** Sends pushes that are due. `rows` when the caller already read them. */
 export async function drainOutbox(env: Env, now: number, rows?: Due[]): Promise<number> {
@@ -136,29 +175,38 @@ export async function cleanup(db: D1Database, now: number) {
     db.prepare('DELETE FROM outbox WHERE expires <= ?').bind(now),
     db.prepare('DELETE FROM events WHERE t < ?').bind(now - 7 * 24 * 60 * MIN),
     db.prepare('DELETE FROM watches WHERE expires <= ?').bind(now),
-    // Devices nobody has opened in 30 days and that watch nothing.
     // A device with nothing watched and no visit in 3 days goes. The app starts a new one if it comes back.
     db.prepare('DELETE FROM devices WHERE seen < ? AND id NOT IN (SELECT device FROM watches)').bind(now - 3 * 24 * 60 * MIN),
     db.prepare('DELETE FROM signups WHERE day < ?').bind(new Date(now - 2 * 24 * 60 * MIN).toISOString().slice(0, 10)),
   ]);
 }
 
-export interface RunReport { pushed: number; polled: string[]; alerts: number; skipped?: string; error?: string }
+export interface RunReport { pushed: number; queued?: number; polled: string[]; alerts: number; skipped?: string; error?: string }
 
+/** The once-a-minute job, then any alerts it found go straight to the queue instead of waiting for next minute. */
 export async function run(env: Env, now = Date.now()): Promise<RunReport> {
+  const r = await check(env, now);
+  if (r.alerts) r.queued = (r.queued ?? 0) + await fanOut(env, Date.now());
+  return r;
+}
+
+async function check(env: Env, now: number): Promise<RunReport> {
   const db = env.DB;
   // Everything a quiet run needs, in one round trip.
   const [out, w, kv] = await db.batch([
-    due(db, now),
+    due(db, now, PUSH_MAX + 1),
     // A watch marked for a test counts as new, so its department's next check reads it.
     db.prepare('SELECT term, dept, MAX(CASE WHEN test = 1 THEN ? ELSE created END) AS newest FROM watches WHERE expires > ? GROUP BY term, dept').bind(now, now),
     db.prepare("SELECT k, v FROM kv WHERE k IN ('poller', 'session', 'polled') OR k LIKE 'live:%'"),
   ]);
-  const pushed = await drainOutbox(env, now, out!.results as Due[]);
+  // A few waiting (retries, a quiet minute): sent here. More than one run can send: all to the queue.
+  const waiting = out!.results as Due[];
+  const queued = waiting.length > PUSH_MAX ? await fanOut(env, now) : 0;
+  const pushed = queued ? 0 : await drainOutbox(env, now, waiting.slice(0, PUSH_MAX));
   if (new Date(now).getUTCMinutes() % 30 === 0) await cleanup(db, now);
 
   const watched = w!.results as { term: string; dept: string; newest: number }[];
-  if (!watched.length) return { pushed, polled: [], alerts: 0, skipped: 'nothing watched' }; // no requests at all
+  if (!watched.length) return { pushed, queued, polled: [], alerts: 0, skipped: 'nothing watched' }; // no requests at all
   const newest = new Map(watched.map((x) => [`${x.term}|${x.dept}`, x.newest]));
 
   const st: Record<string, unknown> = Object.fromEntries((kv!.results as { k: string; v: string }[]).map((r) => [r.k, JSON.parse(r.v)]));
@@ -170,7 +218,7 @@ export async function run(env: Env, now = Date.now()): Promise<RunReport> {
   const counts: Record<string, TermCounts> = {}; // term -> counts
   for (const [k, v] of Object.entries(st)) if (k.startsWith('live:')) counts[k.slice(5)] = v as TermCounts;
   let session = st.session as Session | undefined;
-  const report: RunReport = { pushed, polled: [], alerts: 0 };
+  const report: RunReport = { pushed, queued, polled: [], alerts: 0 };
   const writes: D1PreparedStatement[] = [];
   try {
     const keys = watched.map((w) => `${w.term}|${w.dept}`);
