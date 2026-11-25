@@ -1,0 +1,23 @@
+{
+  "name": "fccu-seats",
+  "private": true,
+  "type": "module",
+  "description": "Seat-opening alerts for the FCCU planner: a Cloudflare Worker that polls Empower and sends web push.",
+  "scripts": {
+    "dev": "wrangler dev --test-scheduled",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "db:local": "wrangler d1 execute fccu-seats --local --file schema.sql",
+    "db:remote": "wrangler d1 execute fccu-seats --remote --file schema.sql",
+    "vapid": "node scripts/vapid.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261123.1",
+    "typescript": "^5.6.3",
+    "wrangler": "^4.168.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "workerd@1.20261123.1": true
+  }
+}

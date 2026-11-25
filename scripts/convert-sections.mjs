@@ -5,7 +5,7 @@
 //   { at: "YYYY-MM-DDTHH:MMZ", s: [{ c, x, t, cr, m: [[days, start, end, room?]], i, a, o }] }
 // Also refreshes src/data/credits.json when this is the newest term. src/data/registry.ts finds the term file itself.
 // scripts/scrape.py fetches the catalog and runs this for you.
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 const [input, id, label] = process.argv.slice(2);
@@ -33,6 +33,13 @@ const term = {
   })),
 };
 writeFileSync(`src/data/terms/${id}.json`, JSON.stringify(term));
+
+// Which sections exist, for the seat-alerts Worker to check watches against (seats/src/index.ts). Served as a
+// static file, so validating a watch never costs a request to FCCU's server.
+const index = {};
+for (const s of term.sections) (index[s.course] ??= []).push(s.sec);
+mkdirSync('public/sections', { recursive: true });
+writeFileSync(`public/sections/${id}.json`, `${JSON.stringify({ term: id, asOf: term.asOf, s: index })}\n`);
 console.log(`Wrote src/data/terms/${id}.json: ${term.sections.length} sections as of ${term.asOf}`);
 
 // Current credits per course. The audit uses these for every course not on the transcript yet, so a credit

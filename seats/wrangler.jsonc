@@ -1,0 +1,17 @@
+// Seat alerts Worker. Setup steps are in README.md.
+{
+  "name": "fccu-seats",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "workers_dev": true,
+  "observability": { "enabled": true },
+  // Every minute. A run with nothing watched makes no request to Empower.
+  "triggers": { "crons": ["* * * * *"] },
+  "vars": {
+    "SITE": "https://csaudit.vercel.app",
+    "VAPID_SUBJECT": "https://csaudit.vercel.app",
+    // Public half of the VAPID key pair (npm run vapid). The private half is the VAPID_JWK secret.
+    "VAPID_PUBLIC": "SET_ME"
+  },
+  "d1_databases": [{ "binding": "DB", "database_name": "fccu-seats", "database_id": "SET_ME" }]
+}
