@@ -12,6 +12,7 @@ export interface Env {
   VAPID_JWK: string; // secret: the private key as a JWK
   VAPID_SUBJECT: string;
   PROXY_KEY?: string; // secret: sent by the site's proxy (middleware.ts); unset in local development
+  DISCORD_WEBHOOK?: string; // secret: where feedback from the site goes
   PUSHES?: Queue<PushBatch>; // pushes fanned out to their own runs; without it the cron sends them itself
 }
 
@@ -177,6 +178,7 @@ export async function cleanup(db: D1Database, now: number) {
     db.prepare('DELETE FROM watches WHERE expires <= ?').bind(now),
     // A device with nothing watched and no visit in 3 days goes. The app starts a new one if it comes back.
     db.prepare('DELETE FROM devices WHERE seen < ? AND id NOT IN (SELECT device FROM watches)').bind(now - 3 * 24 * 60 * MIN),
+    db.prepare("DELETE FROM kv WHERE k LIKE 'fb:%' AND k < ?").bind(`fb:${Math.floor(now / (60 * MIN)) - 24}`),
     db.prepare('DELETE FROM signups WHERE day < ?').bind(new Date(now - 2 * 24 * 60 * MIN).toISOString().slice(0, 10)),
   ]);
 }

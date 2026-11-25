@@ -1,5 +1,6 @@
 import { ArrowUpRight, FileUp, Monitor, Moon, RotateCcw, Sun } from 'lucide-react';
-import { NEW_ISSUE, REPO } from '@/lib/links';
+import { REPO } from '@/lib/links';
+import { openFeedback } from '@/features/feedback/Feedback';
 import { useModel } from '@/state/model';
 import { actions, useStore, type Theme } from '@/state/store';
 import { ui, useUI } from '@/state/ui';
@@ -61,12 +62,13 @@ export function Settings() {
 
         <PanelSection title="About">
           <p className="pb-1 text-sm text-fg-3">Free and open source. Something wrong for your batch? Say so.</p>
-          {[{ href: REPO, label: 'Source code' }, { href: NEW_ISSUE, label: 'Report an issue' }].map((l) => (
-            <a key={l.href} href={l.href} target="_blank" rel="noopener noreferrer" className="-mx-2 flex h-11 items-center justify-between rounded-lg px-2 text-base transition-colors hover:bg-surface-2">
-              {l.label}
-              <ArrowUpRight className="size-4 text-fg-3" strokeWidth={1.5} />
-            </a>
-          ))}
+          <a href={REPO} target="_blank" rel="noopener noreferrer" className="-mx-2 flex h-11 items-center justify-between rounded-lg px-2 text-base transition-colors hover:bg-surface-2">
+            Source code
+            <ArrowUpRight className="size-4 text-fg-3" strokeWidth={1.5} />
+          </a>
+          <button type="button" onClick={() => { ui.settings(false); openFeedback(); }} className="-mx-2 flex h-11 items-center justify-between rounded-lg px-2 text-left text-base transition-colors hover:bg-surface-2">
+            Send feedback
+          </button>
         </PanelSection>
       </div>
     </Sheet>

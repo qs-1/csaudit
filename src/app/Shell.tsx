@@ -8,7 +8,8 @@ import { SeatsScreen } from '@/features/seats/Seats';
 import { Settings } from '@/features/settings/Settings';
 import { TranscriptScreen } from '@/features/transcript/Transcript';
 import { useHotkey, useIsMobile, useMedia } from '@/lib/hooks';
-import { NEW_ISSUE, REPO } from '@/lib/links';
+import { REPO } from '@/lib/links';
+import { openFeedback } from '@/features/feedback/Feedback';
 import { go, useRoute, type Route } from '@/lib/route';
 import { cn } from '@/lib/utils';
 import { useModel } from '@/state/model';
@@ -159,7 +160,7 @@ export function Shell() {
                 <p className="mb-3 whitespace-nowrap px-[11px] text-xs text-fg-3">
                   <a href={REPO} target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-fg">Source</a>
                   <span className="mx-1.5 opacity-60">·</span>
-                  <a href={NEW_ISSUE} target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-fg">Report an issue</a>
+                  <button type="button" onClick={openFeedback} className="transition-colors hover:text-fg">Send feedback</button>
                 </p>
               )}
               <SideTip label={bare ? 'Add transcript' : 'New transcript'} off={!collapsed}>

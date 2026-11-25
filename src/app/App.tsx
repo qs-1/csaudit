@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Toaster } from 'sonner';
+import { Feedback } from '@/features/feedback/Feedback';
 import { Import } from '@/features/import/Import';
 import { useMedia } from '@/lib/hooks';
 import { useRoute } from '@/lib/route';
@@ -29,6 +30,7 @@ export default function App() {
   return (
     <>
       {hasTranscript && route !== 'import' ? <Shell /> : <Import />}
+      <Feedback />
       <Toaster
         theme={dark ? 'dark' : 'light'}
         position="top-center"

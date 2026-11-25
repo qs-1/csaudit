@@ -5,7 +5,8 @@ import { Mark } from '@/app/Mark';
 import { SAMPLE_TRANSCRIPT } from '@/data/sample';
 import { CURRENT, TERMS } from '@/data/registry';
 import { isScheduleTranscript, type CreditLookup } from '@/engine';
-import { NEW_ISSUE, REPO } from '@/lib/links';
+import { REPO } from '@/lib/links';
+import { openFeedback } from '@/features/feedback/Feedback';
 import { go } from '@/lib/route';
 import { cn } from '@/lib/utils';
 import { actions, useStore } from '@/state/store';
@@ -182,7 +183,7 @@ export function Import() {
           <p className="mt-5 text-center text-xs text-fg-3">
             <a href={REPO} target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-fg">Open source</a>
             <span className="mx-1.5 opacity-60">·</span>
-            <a href={NEW_ISSUE} target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-fg">Report an issue</a>
+            <button type="button" onClick={openFeedback} className="transition-colors hover:text-fg">Send feedback</button>
           </p>
         </div>
       </motion.div>

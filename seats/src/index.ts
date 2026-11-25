@@ -248,6 +248,48 @@ async function probeTerm(d: Device, term: string | null) {
   return json({ term, sections: got.seats.length, ms: got.ms, wallMs: Date.now() - t });
 }
 
+/* ---------- Feedback: a message from the site, posted to a Discord channel ---------- */
+
+const FEEDBACK_PER_HOUR = 5; // per address
+const FEEDBACK_PER_DAY = 300; // everyone together, so a flood can't bury the channel or the free quota
+
+async function feedback(req: Request, env: Env) {
+  if (!env.DISCORD_WEBHOOK) return fail(503, 'Feedback is off right now');
+  if (Number(req.headers.get('content-length') ?? 0) > 8_000) return fail(413, 'That message is too long');
+  const b = await req.json<{ message?: unknown; contact?: unknown; page?: unknown }>().catch(() => null);
+  const clean = (v: unknown, max: number) => (typeof v === 'string' ? v.replace(/[ --]/g, '').trim().slice(0, max) : '');
+  const message = clean(b?.message, 1500);
+  const contact = clean(b?.contact, 100);
+  const page = clean(b?.page, 40);
+  if (message.length < 3) return fail(400, 'Write a little more');
+
+  const now = Date.now();
+  const hour = Math.floor(now / (60 * MIN));
+  const who = `fb:${hour}:${(await sha256(`${clientIp(req, env)}|${hour}|${env.VAPID_JWK}`)).slice(0, 24)}`;
+  const day = `fbday:${new Date(now).toISOString().slice(0, 10)}`;
+  const [mine, all] = await env.DB.batch([
+    env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(who),
+    env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(day),
+  ]);
+  const n = (r: D1Result | undefined) => Number((r?.results[0] as { v: string } | undefined)?.v ?? 0);
+  if (n(mine) >= FEEDBACK_PER_HOUR) return fail(429, 'Thanks! That’s plenty for now. Try again in an hour.');
+  if (n(all) >= FEEDBACK_PER_DAY) return fail(429, 'Too much feedback today. Try again tomorrow.');
+  const bump = (k: string) => env.DB.prepare("INSERT INTO kv (k, v) VALUES (?, '1') ON CONFLICT (k) DO UPDATE SET v = CAST(v AS INTEGER) + 1").bind(k);
+  await env.DB.batch([bump(who), bump(day), env.DB.prepare("DELETE FROM kv WHERE k LIKE 'fbday:%' AND k < ?").bind(`fbday:${new Date(now - 3 * 24 * 60 * MIN).toISOString().slice(0, 10)}`)]);
+
+  // Mentions are switched off, so a message can't ping @everyone or anyone else. No address or device is sent.
+  const fields = [contact && { name: 'Contact', value: contact, inline: true }, page && { name: 'Page', value: page, inline: true }].filter(Boolean);
+  const res = await fetch(env.DISCORD_WEBHOOK, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'CS Audit feedback', allowed_mentions: { parse: [] }, embeds: [{ description: message, color: 0xff8484, fields, timestamp: new Date(now).toISOString() }] }),
+    redirect: 'manual',
+    signal: AbortSignal.timeout(8_000),
+  }).catch(() => null);
+  await res?.body?.cancel();
+  return res?.ok ? json({ sent: true }) : fail(502, 'Couldn’t send it. Try again in a minute.');
+}
+
 /* ---------- Router ---------- */
 
 export default {
@@ -259,6 +301,7 @@ export default {
       if (route === 'GET /api/config') return json({ vapid: env.VAPID_PUBLIC }, 200, { 'Cache-Control': 'public, max-age=3600' });
       if (route === 'GET /api/seats') return await liveSeats(env, url.searchParams.get('term'));
       if (route === 'POST /api/devices') return await createDevice(req, env);
+      if (route === 'POST /api/feedback') return await feedback(req, env);
       const d = await auth(req, env);
       if (!d) return fail(401, 'Unknown device');
       switch (route) {
