@@ -22,6 +22,13 @@ if (query.has('plan')) {
   setTimeout(() => (known ? toast('Opened a shared timetable', { description: useStore.getState().transcript ? 'Your own plan is unchanged until you choose to use this one.' : 'Add a transcript to see what it does for your degree.' }) : toast.error('That link has no timetable in it')), 400);
 }
 
+// A link to Seats or the planner works without a transcript: open it that way instead of on the import screen.
+{
+  const hash = window.location.hash.replace(/^#\/?/, '');
+  const s = useStore.getState();
+  if (!s.transcript && !s.planOnly && (hash === 'seats' || hash === 'planner')) actions.planOnly();
+}
+
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 
 // The theme class goes on before the first render, so a reload never paints a light frame in dark mode.
