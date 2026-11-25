@@ -1,9 +1,10 @@
 import * as Tip from '@radix-ui/react-tooltip';
-import { AlertTriangle, CalendarRange, FileText, FileUp, LayoutGrid, PanelLeftClose, PanelLeftOpen, RotateCcw, Settings2, TrendingUp, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, Bell, CalendarRange, FileText, FileUp, LayoutGrid, PanelLeftClose, PanelLeftOpen, RotateCcw, Settings2, TrendingUp, type LucideIcon } from 'lucide-react';
 import { useCallback, useLayoutEffect, useState, type ReactNode } from 'react';
 import { Gpa } from '@/features/gpa/Gpa';
 import { Overview } from '@/features/overview/Overview';
 import { Planner } from '@/features/planner/Planner';
+import { SeatsScreen } from '@/features/seats/Seats';
 import { Settings } from '@/features/settings/Settings';
 import { TranscriptScreen } from '@/features/transcript/Transcript';
 import { useHotkey, useIsMobile, useMedia } from '@/lib/hooks';
@@ -22,6 +23,7 @@ const NAV: { id: ScreenRoute; label: string; icon: LucideIcon }[] = [
   { id: 'planner', label: 'Planner', icon: CalendarRange },
   { id: 'gpa', label: 'GPA', icon: TrendingUp },
   { id: 'transcript', label: 'Transcript', icon: FileText },
+  { id: 'seats', label: 'Seats', icon: Bell },
   // Docs is hidden until it's tidied up; its screen stays in features/docs.
 ];
 
@@ -30,6 +32,7 @@ const SCREENS: Record<ScreenRoute, () => ReactNode> = {
   planner: () => <Planner />,
   gpa: () => <Gpa />,
   transcript: () => <TranscriptScreen />,
+  seats: () => <SeatsScreen />,
   docs: () => <Overview />,
 };
 
@@ -70,8 +73,9 @@ export function Shell() {
   const bare = model?.bare ?? false; // planner only, no transcript
   const routed = useRoute();
   // Without a transcript only the planner makes sense. A docs link from before lands on the overview.
-  const route: ScreenRoute = bare ? 'planner' : routed === 'import' || routed === 'docs' ? 'overview' : routed;
-  const nav = bare ? NAV.filter((n) => n.id === 'planner') : NAV;
+  // Seat alerts don't need a transcript either.
+  const route: ScreenRoute = bare ? (routed === 'seats' ? 'seats' : 'planner') : routed === 'import' || routed === 'docs' ? 'overview' : routed;
+  const nav = bare ? NAV.filter((n) => n.id === 'planner' || n.id === 'seats') : NAV;
   const tabs = nav.length > 1; // a tab bar with one tab is just in the way
   const mobile = useIsMobile();
   const problems = model?.problems.length ?? 0;

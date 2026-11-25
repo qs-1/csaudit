@@ -12,7 +12,8 @@ import { ui, useUI } from '@/state/ui';
 import { Button } from '@/ui/button';
 import { Card, Code } from '@/ui/card';
 import { Sheet } from '@/ui/sheet';
-import { hasSeatCounts, REGISTERED, roleTag, SectionRow } from './CourseSearch';
+import { WatchBell } from '@/features/seats/Bell';
+import { hasSeatCounts, REGISTERED, roleTag, SectionRow, watchableTerm } from './CourseSearch';
 import { colorVar, onVar, preview, removeFromPlan, restoreToPlan, type PlanState } from './usePlan';
 
 /* ---------- This term: load, what it still needs, the week in a line ---------- */
@@ -163,6 +164,7 @@ export function SectionSheet({ m, p }: { m: Model; p: PlanState }) {
   const role = s && !m.bare ? (p.registered.has(s.course) ? REGISTERED : roleTag(m.roles.roleOf(s.course))) : null;
   const clashes = s ? p.clashWith(s) : [];
   const showSeats = hasSeatCounts(m.term?.sections ?? []);
+  const watchTerm = watchableTerm(p.termId, m.term?.sections ?? []);
   const title = s ? (m.catalog.groups.flatMap((g) => (g.kind === 'all' ? g.courses : [])).find((c) => c.code === s.course)?.title ?? s.title) : '';
   const timed = s ? s.meetings.filter((x) => x.start != null && x.end != null) : [];
   const full = s && showSeats && !hasSeats(s);
@@ -205,16 +207,17 @@ export function SectionSheet({ m, p }: { m: Model; p: PlanState }) {
           <dl className="mt-5 grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
             <dt className="text-fg-3">Instructor</dt><dd className="text-fg">{s.instructor || 'Staff'}</dd>
             <dt className="text-fg-3">Credits</dt><dd className="num text-fg">{s.credits}</dd>
-            {showSeats ? <><dt className="text-fg-3">Seats</dt><dd className={cn('num', full ? 'text-bad' : 'text-fg')}>{full ? `Full · 0 of ${s.cap}` : `${s.avail} of ${s.cap} open`}</dd></> : null}
+            {showSeats ? <><dt className="text-fg-3">Seats</dt><dd className="-my-1.5 flex items-center gap-2"><span className={cn('num', full ? 'text-bad' : 'text-fg')}>{full ? `Full · 0 of ${s.cap}` : `${s.avail} of ${s.cap} open`}{s.live ? <span className="text-fg-3"> · live</span> : null}</span>{watchTerm ? <WatchBell term={watchTerm} s={s} /> : null}</dd></> : null}
             {role ? <><dt className="text-fg-3">Counts as</dt><dd className={cn(role.tone === 'bad' ? 'text-bad' : role.tone === 'warn' ? 'text-warn' : 'text-fg')}>{role.text}</dd></> : null}
           </dl>
+
 
           {others.length ? (
             <>
               <p className="mb-1.5 mt-6 text-sm text-fg-3">Switch to another section</p>
               <ul className="flex flex-col gap-0.5 rounded-[10px] bg-surface-2/60 p-1">
                 {others.map((o) => (
-                  <SectionRow key={sid(o)} s={o} p={p} showSeats={showSeats} touch={touch} onPick={(x) => { actions.pick(p.termId, x.course, x.sec); preview(null); }} />
+                  <SectionRow key={sid(o)} s={o} p={p} showSeats={showSeats} watchTerm={watchTerm} touch={touch} onPick={(x) => { actions.pick(p.termId, x.course, x.sec); preview(null); }} />
                 ))}
               </ul>
             </>

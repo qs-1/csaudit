@@ -4,6 +4,7 @@ import {
   type Catalog, type Notice, type Result, type Row, type RoleContext, type Section, type Term, type TermPoint, type Transcript,
 } from '@/engine';
 import { CURRENT, defaultTerm, detectProgram, programById, TERMS, type TermEntry } from '@/data/registry';
+import { useLiveSeats, type LiveSeats } from '@/lib/seats';
 import { memoLast } from '@/lib/utils';
 import { useStore } from './store';
 
@@ -39,6 +40,24 @@ export function useTermData(entry: TermEntry): { term: Term | null; failed: bool
   }, [entry]);
   return state.id === entry.id ? state : { term: cache.get(entry.id) ?? null, failed: false };
 }
+
+/**
+ * The hourly snapshot with fresher counts on top, where the seat alerts poller has them (departments someone
+ * watches, seen in the last 10 minutes). Only counts it saw after the snapshot replace it.
+ */
+export function overlayLive(t: Term | null, live: LiveSeats): Term | null {
+  if (!t || !live.size) return t;
+  const asOf = Date.parse(t.asOf);
+  let changed = false;
+  const sections = t.sections.map((s) => {
+    const l = live.get(`${s.course}|${s.sec}`);
+    if (!l || !(l[2] > asOf)) return s;
+    changed = true;
+    return { ...s, avail: l[0], cap: l[1], live: l[2] };
+  });
+  return changed ? { ...t, sections } : t;
+}
+const withLive = memoLast(overlayLive);
 
 /* ---------- The audit model every screen reads from ---------- */
 
@@ -113,7 +132,8 @@ export function useModel(): Model | null {
   );
 
   const termEntry = TERMS.find((t) => t.id === termId) ?? defaultTerm(upcoming(transcript?.rows ?? EMPTY));
-  const { term, failed } = useTermData(termEntry);
+  const { term: snapshot, failed } = useTermData(termEntry);
+  const term = withLive(snapshot, useLiveSeats(snapshot ? termEntry.id : null));
 
   if (!transcript) return null;
   const bare = !stored;

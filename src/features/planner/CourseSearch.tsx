@@ -10,6 +10,8 @@ import { cn } from '@/lib/utils';
 import type { Model } from '@/state/model';
 import { useUI, ui } from '@/state/ui';
 import { Code, type Tone } from '@/ui/card';
+import { TERMS } from '@/data/registry';
+import { WatchBell } from '@/features/seats/Bell';
 import { Chip, Switch } from '@/ui/controls';
 import { preview, removeFromPlan, restoreToPlan, type PlanState } from './usePlan';
 
@@ -128,6 +130,7 @@ export const CourseSearch = forwardRef<HTMLInputElement, { m: Model; p: PlanStat
 
   const shown = results.slice(0, limit);
   const showSeats = hasSeatCounts(m.term?.sections ?? []);
+  const watchTerm = watchableTerm(m.termEntry.id, m.term?.sections ?? []);
   const moreRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = moreRef.current;
@@ -208,6 +211,7 @@ export const CourseSearch = forwardRef<HTMLInputElement, { m: Model; p: PlanStat
                 onPick={pick}
                 touch={touch}
                 showSeats={showSeats}
+                watchTerm={watchTerm}
                 bare={m.bare}
                 fits={fits}
               />
@@ -220,8 +224,8 @@ export const CourseSearch = forwardRef<HTMLInputElement, { m: Model; p: PlanStat
   );
 });
 
-function CourseRow({ c, p, expanded, onToggle, onPick, touch, showSeats, bare, fits }: {
-  c: CourseItem; p: PlanState; expanded: boolean; onToggle: () => void; onPick: (s: Section) => void; touch?: boolean; showSeats: boolean; bare: boolean; fits: boolean;
+function CourseRow({ c, p, expanded, onToggle, onPick, touch, showSeats, watchTerm, bare, fits }: {
+  c: CourseItem; p: PlanState; expanded: boolean; onToggle: () => void; onPick: (s: Section) => void; touch?: boolean; showSeats: boolean; watchTerm?: string; bare: boolean; fits: boolean;
 }) {
   const chosen = p.inPlan(c.code);
   // With "Fits my week" on, drop sections that clash with the plan (the picked one always stays).
@@ -258,7 +262,7 @@ function CourseRow({ c, p, expanded, onToggle, onPick, touch, showSeats, bare, f
           >
             <ul className="flex flex-col gap-1.5 px-2 pb-2">
               {sections.map((s) => (
-                <SectionRow key={sid(s)} s={s} p={p} onPick={onPick} touch={touch} showSeats={showSeats} />
+                <SectionRow key={sid(s)} s={s} p={p} onPick={onPick} touch={touch} showSeats={showSeats} watchTerm={watchTerm} />
               ))}
             </ul>
           </motion.div>
@@ -277,7 +281,7 @@ export function meetingLines(s: Section) {
 const WEEK_DAYS = ['M', 'T', 'W', 'R', 'F'] as const;
 
 /** Which weekdays a section meets, as a row of small squares. */
-function DaySquares({ s }: { s: Section }) {
+export function DaySquares({ s }: { s: Section }) {
   const met = new Set(s.meetings.filter((m) => m.start != null).flatMap((m) => [...m.days]));
   const days = met.has('S') ? [...WEEK_DAYS, 'S'] : WEEK_DAYS;
   return (
@@ -299,20 +303,25 @@ function DaySquares({ s }: { s: Section }) {
 }
 
 /** Times without the day letters (the squares show those), unless meetings differ by day. */
-function timeLines(s: Section) {
+export function timeLines(s: Section) {
   const timed = s.meetings.filter((m) => m.start != null && m.end != null);
   if (!timed.length) return ['Time not set'];
   const many = timed.length > 1;
   return timed.map((m) => `${many ? `${[...m.days].map((d) => DAY_SHORT[d]).join(' ')}  ` : ''}${hm(m.start!)}–${hm(m.end!)}${m.room ? `  ${m.room}` : ''}`);
 }
 
-export function SectionRow({ s, p, onPick, touch, showSeats }: { s: Section; p: PlanState; onPick: (s: Section) => void; touch?: boolean; showSeats: boolean }) {
+export function SectionRow({ s, p, onPick, touch, showSeats, watchTerm }: {
+  s: Section; p: PlanState; onPick: (s: Section) => void; touch?: boolean; showSeats: boolean;
+  /** The term whose seats can be watched; shows the bell. */
+  watchTerm?: string;
+}) {
   const selected = p.inPlan(s.course)?.sec === s.sec;
   const clashes = selected ? [] : p.clashWith(s);
   const full = showSeats && !hasSeats(s);
   return (
     // A full section can still be planned (seats open up), it just reads as dimmed.
-    <li className={cn(full && !selected && 'opacity-50 transition-opacity hover:opacity-80')}>
+    <li className={cn('relative flex items-center gap-3 rounded-[12px] py-2.5 pl-3 pr-1.5', full && !selected && 'opacity-50 transition-opacity hover:opacity-80 has-[:focus-visible]:opacity-80')}>
+      {/* The whole row picks the section; the bell sits above it as its own button. */}
       <button
         type="button"
         onClick={() => onPick(s)}
@@ -320,32 +329,35 @@ export function SectionRow({ s, p, onPick, touch, showSeats }: { s: Section; p: 
         onFocus={() => !touch && preview(s)}
         onBlur={() => !touch && preview(null)}
         aria-pressed={selected}
+        aria-label={`${selected ? 'Picked' : 'Pick'} ${s.course} ${s.sec}`}
         className={cn(
-          'flex w-full items-center gap-3 rounded-[12px] px-3 py-2.5 text-left transition-[background-color,box-shadow]',
-          selected ? 'bg-surface shadow-[inset_0_0_0_1.5px_rgb(var(--fg)/0.85)]' : 'bg-surface hover:shadow-[inset_0_0_0_1px_rgb(var(--fg)/0.3)]',
+          'absolute inset-0 rounded-[12px] bg-surface transition-[box-shadow]',
+          selected ? 'shadow-[inset_0_0_0_1.5px_rgb(var(--fg)/0.85)]' : 'hover:shadow-[inset_0_0_0_1px_rgb(var(--fg)/0.3)]',
         )}
-      >
-        <span className={cn('num w-5 shrink-0 self-start pt-px text-sm font-medium', selected ? 'text-fg' : 'text-fg-2')}>{s.sec}</span>
-        <span className="min-w-0 flex-1">
-          <DaySquares s={s} />
-          <span className="mt-1.5 block">
-            {timeLines(s).map((line) => <span key={line} className="num block whitespace-pre text-xs text-fg-2">{line}</span>)}
-          </span>
-          <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-fg-3">
-            <span>{s.instructor || 'Staff'}</span>
-            {showSeats ? <><span aria-hidden>·</span><span className={cn('num', full && 'text-bad')}>{full ? `Full · 0/${s.cap}` : `${s.avail}/${s.cap} seats`}</span></> : null}
-            {s.credits !== undefined ? <><span aria-hidden>·</span><span className="num">{s.credits} cr</span></> : null}
-          </span>
-          {clashes.length ? <span className="mt-1 block text-xs text-bad">Clashes with {clashes.map((x) => `${x.course} ${x.sec}`).join(', ')}</span> : null}
+      />
+      <span className={cn('num pointer-events-none relative w-5 shrink-0 self-start pt-px text-sm font-medium', selected ? 'text-fg' : 'text-fg-2')}>{s.sec}</span>
+      <span className="pointer-events-none relative min-w-0 flex-1">
+        <DaySquares s={s} />
+        <span className="mt-1.5 block">
+          {timeLines(s).map((line) => <span key={line} className="num block whitespace-pre text-xs text-fg-2">{line}</span>)}
         </span>
-        <span className="grid size-7 shrink-0 place-items-center">
-          {selected ? <Check className="size-4 text-fg" strokeWidth={2} /> : <Plus className="size-4 text-fg-3" strokeWidth={1.75} />}
+        <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-fg-3">
+          <span>{s.instructor || 'Staff'}</span>
+          {showSeats ? <><span aria-hidden>·</span><span className={cn('num', full && 'text-bad')}>{full ? `Full · 0/${s.cap}` : `${s.avail}/${s.cap} seats`}</span></> : null}
+          {s.credits !== undefined && !watchTerm ? <><span aria-hidden>·</span><span className="num">{s.credits} cr</span></> : null}
         </span>
-      </button>
+        {clashes.length ? <span className="mt-1 block text-xs text-bad">Clashes with {clashes.map((x) => `${x.course} ${x.sec}`).join(', ')}</span> : null}
+      </span>
+      {watchTerm ? <WatchBell term={watchTerm} s={s} className="relative -mr-2" /> : null}
+      <span className="pointer-events-none relative grid size-7 shrink-0 place-items-center">
+        {selected ? <Check className="size-4 text-fg" strokeWidth={2} /> : <Plus className="size-4 text-fg-3" strokeWidth={1.75} />}
+      </span>
     </li>
   );
 }
 
+/** The term whose seats can be watched: the newest, while its sections carry seat counts. */
+export const watchableTerm = (termId: string, secs: Section[]) => (termId === TERMS[TERMS.length - 1]?.id && hasSeatCounts(secs) ? termId : undefined);
 
 /** Whether the section list carries seat counts at all (older scrapes have none). */
 export const hasSeatCounts = (secs: Section[]) => secs.some((s) => s.cap > 0);

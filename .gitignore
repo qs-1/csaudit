@@ -8,3 +8,10 @@ __pycache__/
 
 # Design guide and reference images (local only)
 design/
+
+# Seat timing logs from scripts/seattime.py
+scripts/raw/seattime-*
+
+# Worker local secrets and state
+seats/.dev.vars
+seats/.wrangler/
