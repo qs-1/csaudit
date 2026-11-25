@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { deptOf, findToken, listBody, parseSeats } from '../seats/src/empower';
-import { ALERTS_PER_HOUR, armedFor, backoff, freshPoller, gap, MIN, pickDepts, recordTime, step, type WatchState } from '../seats/src/logic';
+import { ALERTS_PER_HOUR, armedFor, backoff, diffDept, FRESH, freshPoller, gap, MIN, pickDepts, pruneTerm, recordTime, step, type WatchState } from '../seats/src/logic';
 import { b64u, encrypt, unb64u, vapidJwt } from '../seats/src/webpush';
 
 const fixture = (name: string) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
@@ -67,6 +67,44 @@ describe('alert transitions', () => {
     expect(armedFor(3)).toBe(false);
     // A watch made while seats were open waits for a fill, then alerts on the reopening.
     expect(play([3, 2, 0, 1], { armed: armedFor(3), alerts: [] })).toEqual([false, false, false, true]);
+  });
+});
+
+describe('department diff', () => {
+  const t0 = Date.UTC(2026, 10, 25, 4, 0);
+  const sec = (s: string, avail: number, cap = 35) => ({ course: 'MATH 107', sec: s, avail, cap });
+
+  it('lists only sections that crossed between full and open', () => {
+    const a = diffDept(undefined, [sec('A', 0), sec('B', 3), sec('C', 0)], t0);
+    const b = diffDept(a.next, [sec('A', 1), sec('B', 2), sec('C', 0)], t0 + MIN);
+    expect(b.crossed).toEqual(['MATH 107|A']);
+    expect(b.since).toBe(t0);
+    expect(b.changed).toBe(2);
+    const c = diffDept(b.next, [sec('A', 1), sec('B', 0), sec('C', 0)], t0 + 2 * MIN);
+    expect(c.crossed).toEqual(['MATH 107|B']);
+  });
+
+  it('keeps when each section last changed', () => {
+    const a = diffDept(undefined, [sec('A', 0), sec('B', 3)], t0);
+    const b = diffDept(a.next, [sec('A', 0), sec('B', 2)], t0 + MIN);
+    expect(b.next.s).toEqual({ 'MATH 107|A': [0, 35, t0], 'MATH 107|B': [2, 35, t0 + MIN] });
+    expect(b.next.at).toBe(t0 + MIN);
+  });
+
+  it('reads every watch when there is no recent previous check', () => {
+    expect(diffDept(undefined, [sec('A', 0)], t0)).toMatchObject({ since: 0, crossed: [] });
+    const old = diffDept(undefined, [sec('A', 0)], t0).next;
+    expect(diffDept(old, [sec('A', 0)], t0 + FRESH)).toMatchObject({ since: 0, crossed: [] });
+  });
+
+  it('counts a section new to a recent check as crossed', () => {
+    const a = diffDept(undefined, [sec('A', 0)], t0);
+    expect(diffDept(a.next, [sec('A', 0), sec('D', 0)], t0 + MIN).crossed).toEqual(['MATH 107|D']);
+  });
+
+  it('drops departments not checked in two days', () => {
+    const now = t0 + 3 * 24 * 60 * MIN;
+    expect(Object.keys(pruneTerm({ MATH: { at: t0, s: {} }, BUSN: { at: now - MIN, s: {} } }, now))).toEqual(['BUSN']);
   });
 });
 

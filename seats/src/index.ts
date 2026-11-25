@@ -3,16 +3,15 @@
 // No accounts: a device is a random id plus a secret the app keeps in localStorage. Push is optional; a device
 // without it still sees its watches update in the app.
 
-import { deptOf } from './empower';
-import { armedFor, MIN } from './logic';
+import { deptOf, getList, openSession } from './empower';
+import { armedFor, FRESH, MIN, type TermCounts } from './logic';
 import { run, vapid, type Env } from './poll';
 import { send } from './webpush';
 
 const WATCHES_MAX = 15;
 const WATCH_DAYS = 45;
-const SIGNUPS_PER_DAY = 10;
+const SIGNUPS_PER_DAY = 200; // per network: a campus shares one address, so this only stops scripts
 const DEVICES_MAX = 20_000;
-const FRESH = 10 * MIN; // counts older than this aren't "live"
 
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...headers } });
@@ -87,7 +86,7 @@ async function createDevice(req: Request, env: Env) {
     env.DB.prepare('SELECT n FROM signups WHERE who = ? AND day = ?').bind(who, day),
   ]);
   if (((count!.results[0] as { n: number }).n) >= DEVICES_MAX) return fail(503, 'Seat alerts are full right now');
-  if (((mine!.results[0] as { n: number } | undefined)?.n ?? 0) >= SIGNUPS_PER_DAY) return fail(429, 'Too many new devices from this network today');
+  if (((mine!.results[0] as { n: number } | undefined)?.n ?? 0) >= SIGNUPS_PER_DAY) return fail(429, 'Too many new devices from this network today. Try tomorrow.');
   await env.DB.batch([
     env.DB.prepare('INSERT INTO devices (id, secret, endpoint, p256dh, auth, created, seen) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(id, await sha256(secret), sub?.endpoint ?? null, sub?.p256dh ?? null, sub?.auth ?? null, now, now),
     env.DB.prepare('INSERT INTO signups (who, day, n) VALUES (?, ?, 1) ON CONFLICT (who, day) DO UPDATE SET n = n + 1').bind(who, day),
@@ -132,16 +131,26 @@ const pushState = (d: Device) => (!d.endpoint ? 'none' : d.push_dead ? 'dead' : 
 
 async function listWatches(env: Env, d: Device) {
   const now = Date.now();
-  const [rows, st] = await env.DB.batch([
-    env.DB.prepare(`SELECT w.term, w.course, w.sec, w.armed, w.last_alert, w.created, w.expires, s.avail, s.cap, s.seen, s.changed
-      FROM watches w LEFT JOIN seats s ON s.term = w.term AND s.course = w.course AND s.sec = w.sec
-      WHERE w.device = ? AND w.expires > ? ORDER BY w.created`).bind(d.id, now),
+  const [rows, st, live] = await env.DB.batch([
+    env.DB.prepare('SELECT term, course, sec, dept, armed, last_alert, created, expires FROM watches WHERE device = ? AND expires > ? ORDER BY created').bind(d.id, now),
     env.DB.prepare("SELECT v FROM kv WHERE k = 'poller'"),
+    env.DB.prepare("SELECT k, v FROM kv WHERE k IN (SELECT DISTINCT 'live:' || term FROM watches WHERE device = ?)").bind(d.id),
   ]);
+  const counts = Object.fromEntries((live!.results as { k: string; v: string }[]).map((r) => [r.k.slice(5), JSON.parse(r.v) as TermCounts]));
+  const watches = (rows!.results as { term: string; course: string; sec: string; dept: string }[]).map(({ dept, ...w }) => {
+    const dc = counts[w.term]?.[dept];
+    const c = dc?.s[`${w.course}|${w.sec}`];
+    return { ...w, avail: c?.[0] ?? null, cap: c?.[1] ?? null, seen: c ? dc!.at : null, changed: c?.[2] ?? null };
+  });
   const p = st!.results[0] ? JSON.parse((st!.results[0] as { v: string }).v) as { until: number; blocked: boolean; lastOk: number } : null;
   const poller = !p ? 'starting' : p.blocked ? 'blocked' : now < p.until ? 'backoff' : 'ok';
-  return json({ push: pushState(d), poller, lastOk: p?.lastOk ?? null, now, watches: rows!.results });
+  return json({ push: pushState(d), poller, lastOk: p?.lastOk ?? null, now, watches });
 }
+
+const termCounts = async (env: Env, term: string) => {
+  const r = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(`live:${term}`).first<{ v: string }>();
+  return r ? JSON.parse(r.v) as TermCounts : {};
+};
 
 async function addWatch(req: Request, env: Env, d: Device) {
   const b = await req.json<{ term?: unknown; course?: unknown; sec?: unknown; avail?: unknown }>().catch(() => null);
@@ -150,15 +159,12 @@ async function addWatch(req: Request, env: Env, d: Device) {
   if (!idx.terms.includes(b.term)) return fail(400, `${b.term} isn't open for alerts`);
   if (!idx.sections[b.term]?.[b.course]?.includes(b.sec)) return fail(400, `${b.course} ${b.sec} isn't in the ${b.term} list`);
   const now = Date.now();
-  const [count, seat] = await env.DB.batch([
-    env.DB.prepare('SELECT COUNT(*) AS n FROM watches WHERE device = ? AND expires > ?').bind(d.id, now),
-    env.DB.prepare('SELECT avail, seen FROM seats WHERE term = ? AND course = ? AND sec = ?').bind(b.term, b.course, b.sec),
-  ]);
-  if ((count!.results[0] as { n: number }).n >= WATCHES_MAX) return fail(409, `You can watch up to ${WATCHES_MAX} sections`);
+  const count = await env.DB.prepare('SELECT COUNT(*) AS n FROM watches WHERE device = ? AND expires > ?').bind(d.id, now).first<{ n: number }>();
+  if (count!.n >= WATCHES_MAX) return fail(409, `You can watch up to ${WATCHES_MAX} sections`);
   // Armed if the section is full: by the poller's count when it's fresh, else by what the app showed.
-  const s = seat!.results[0] as { avail: number; seen: number } | undefined;
-  const shown = Number.isInteger(b.avail) ? (b.avail as number) : null;
-  const avail = s && now - s.seen < FRESH ? s.avail : shown;
+  const dc = (await termCounts(env, b.term))[deptOf(b.course)];
+  const c = dc && now - dc.at < FRESH ? dc.s[`${b.course}|${b.sec}`] : undefined;
+  const avail = c ? c[0] : Number.isInteger(b.avail) ? (b.avail as number) : null;
   await env.DB.prepare(`INSERT INTO watches (device, term, course, sec, dept, armed, created, expires) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT (device, term, course, sec) DO UPDATE SET expires = excluded.expires`)
     .bind(d.id, b.term, b.course, b.sec, deptOf(b.course), armedFor(avail) ? 1 : 0, now, now + WATCH_DAYS * 24 * 60 * MIN).run();
@@ -172,12 +178,28 @@ async function removeWatch(req: Request, env: Env, d: Device) {
   return listWatches(env, d);
 }
 
-/** Fresh counts for every section the poller has seen lately, for the planner to show instead of hourly ones. */
+/** Fresh counts for every section the poller has checked lately, for the planner to show instead of hourly ones. */
 async function liveSeats(env: Env, term: string | null) {
   if (!term || !/^\d{4}[A-Z]{2}$/.test(term)) return fail(400, 'Which term?');
   const since = Date.now() - FRESH;
-  const { results } = await env.DB.prepare('SELECT course, sec, avail, cap, seen FROM seats WHERE term = ? AND seen > ?').bind(term, since).all<{ course: string; sec: string; avail: number; cap: number; seen: number }>();
-  return json({ term, seats: results.map((r) => [r.course, r.sec, r.avail, r.cap, r.seen]) }, 200, { 'Cache-Control': 'public, max-age=20, s-maxage=30' });
+  const out: [string, string, number, number, number][] = [];
+  for (const d of Object.values(await termCounts(env, term))) {
+    if (d.at <= since) continue;
+    for (const [key, [avail, cap]] of Object.entries(d.s)) {
+      const [course, sec] = key.split('|') as [string, string];
+      out.push([course, sec, avail, cap, d.at]);
+    }
+  }
+  return json({ term, seats: out }, 200, { 'Cache-Control': 'public, max-age=20, s-maxage=30' });
+}
+
+/** Admin only: one whole-term GetList, to see in the logs whether it fits the CPU limit. */
+async function probeTerm(d: Device, term: string | null) {
+  if (!d.admin) return fail(403, 'Admins only');
+  if (!term || !/^\d{4}[A-Z]{2}$/.test(term)) return fail(400, 'Which term?');
+  const t = Date.now();
+  const got = await getList(await openSession(), term, '', 60_000);
+  return json({ term, sections: got.seats.length, ms: got.ms, wallMs: Date.now() - t });
 }
 
 /* ---------- Router ---------- */
@@ -198,6 +220,7 @@ export default {
         case 'DELETE /api/watches': return await removeWatch(req, env, d);
         case 'PUT /api/devices/me/push': return await setPush(req, env, d);
         case 'POST /api/devices/me/test': return await testPush(env, d);
+        case 'POST /api/admin/probe': return await probeTerm(d, url.searchParams.get('term'));
         case 'DELETE /api/devices/me':
           await env.DB.batch([env.DB.prepare('DELETE FROM watches WHERE device = ?').bind(d.id), env.DB.prepare('DELETE FROM devices WHERE id = ?').bind(d.id)]);
           return json({ deleted: true });

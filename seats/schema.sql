@@ -28,21 +28,6 @@ CREATE TABLE IF NOT EXISTS watches (
 );
 CREATE INDEX IF NOT EXISTS watches_dept ON watches (term, dept);
 
--- Latest counts for every section in a department someone watches. Only changed rows are written.
-CREATE TABLE IF NOT EXISTS seats (
-  term TEXT NOT NULL,
-  course TEXT NOT NULL,
-  sec TEXT NOT NULL,
-  dept TEXT NOT NULL,
-  cid TEXT,
-  avail INTEGER NOT NULL,
-  cap INTEGER NOT NULL,
-  seen INTEGER NOT NULL,             -- last poll that included it
-  changed INTEGER NOT NULL,          -- last time avail or cap changed
-  PRIMARY KEY (term, course, sec)
-);
-CREATE INDEX IF NOT EXISTS seats_seen ON seats (term, seen);
-
 -- Pushes waiting to go out. Sent in their own run, a few dozen at a time.
 CREATE TABLE IF NOT EXISTS outbox (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,6 +39,7 @@ CREATE TABLE IF NOT EXISTS outbox (
   expires INTEGER NOT NULL
 );
 
+-- Poller state, and each term's latest seat counts as one row (live:<term>).
 CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL);
 
 -- New devices per address per day, hashed with a daily salt.

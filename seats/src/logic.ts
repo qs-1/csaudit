@@ -64,3 +64,37 @@ export function pickDepts(watched: string[], lastPolled: Record<string, number>,
     .sort((a, b) => (lastPolled[a] ?? 0) - (lastPolled[b] ?? 0))
     .slice(0, max);
 }
+
+/** Counts older than this aren't shown as live, and a department checked longer ago than this is re-read in full. */
+export const FRESH = 10 * MIN;
+
+/** A department's last check: when, and each section's [avail, cap, last change]. Keyed "COURSE 100|A". */
+export interface DeptCounts { at: number; s: Record<string, [avail: number, cap: number, changed: number]> }
+/** A term's counts by department, stored as one row. */
+export type TermCounts = Record<string, DeptCounts>;
+
+/**
+ * Compares a check with the department's previous one. Only sections that crossed between full and open can move a
+ * watch, so `crossed` lists those. `since` is the previous check's time: watches made after it haven't been looked
+ * at yet. With no recent previous check, `since` is 0 and every watch in the department is read.
+ */
+export function diffDept(prev: DeptCounts | undefined, seats: { course: string; sec: string; avail: number; cap: number }[], now: number) {
+  const recent = prev && now - prev.at < FRESH ? prev : undefined;
+  const next: DeptCounts = { at: now, s: {} };
+  const crossed: string[] = [];
+  let changed = 0;
+  for (const x of seats) {
+    const key = `${x.course}|${x.sec}`;
+    const b = prev?.s[key];
+    const same = b && b[0] === x.avail && b[1] === x.cap;
+    if (!same) changed++;
+    next.s[key] = [x.avail, x.cap, same ? b[2] : now];
+    if (recent && (!b || (b[0] <= 0) !== (x.avail <= 0))) crossed.push(key);
+  }
+  return { next, crossed, since: recent ? recent.at : 0, changed };
+}
+
+/** Drops departments nobody has checked in two days. */
+export function pruneTerm(t: TermCounts, now: number): TermCounts {
+  return Object.fromEntries(Object.entries(t).filter(([, d]) => now - d.at < 2 * 24 * 60 * MIN));
+}

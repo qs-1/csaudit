@@ -2,7 +2,7 @@
 // Free plan limits per run: 10 ms CPU, 50 outgoing requests, 50 database queries. Each run stays well inside them.
 
 import { EmpowerError, getList, openSession, type Seat, type Session } from './empower';
-import { backoff, freshPoller, gap, MIN, pickDepts, recordTime, step, type PollerState } from './logic';
+import { backoff, diffDept, freshPoller, gap, MIN, pickDepts, pruneTerm, recordTime, step, type PollerState, type TermCounts } from './logic';
 import { send, type Vapid } from './webpush';
 
 export interface Env {
@@ -81,50 +81,41 @@ export async function drainOutbox(env: Env, now: number, max = PUSH_MAX): Promis
   return results.length;
 }
 
-/** Applies one department's fresh counts: changed seat rows, watch transitions, queued alerts. One batch. */
-async function apply(db: D1Database, term: string, dept: string, seats: Seat[], now: number): Promise<number> {
-  const [old, watches] = await db.batch([
-    db.prepare('SELECT course, sec, avail, cap FROM seats WHERE term = ? AND dept = ?').bind(term, dept),
-    db.prepare('SELECT device, course, sec, armed, alerts FROM watches WHERE term = ? AND dept = ? AND expires > ?').bind(term, dept, now),
-  ]);
-  const before = new Map((old!.results as { course: string; sec: string; avail: number; cap: number }[]).map((r) => [`${r.course}|${r.sec}`, r]));
-  const writes: D1PreparedStatement[] = [];
-  const fresh = new Map<string, Seat>();
-  for (const s of seats) {
-    const key = `${s.course}|${s.sec}`;
-    fresh.set(key, s);
-    const b = before.get(key);
-    if (!b || b.avail !== s.avail || b.cap !== s.cap) {
-      writes.push(db.prepare(`INSERT INTO seats (term, course, sec, dept, cid, avail, cap, seen, changed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT (term, course, sec) DO UPDATE SET cid = excluded.cid, avail = excluded.avail, cap = excluded.cap, seen = excluded.seen, changed = excluded.changed`)
-        .bind(term, s.course, s.sec, dept, s.cid, s.avail, s.cap, now, now));
-    }
-  }
-  // Unchanged rows still get a fresh "seen", in one statement.
-  writes.push(db.prepare('UPDATE seats SET seen = ? WHERE term = ? AND dept = ?').bind(now, term, dept));
+/**
+ * Applies one department's fresh counts to its watches and queues alerts. Reads only the watches that could move:
+ * sections that crossed between full and open, and watches made since the last check. One query, one batch.
+ */
+async function apply(db: D1Database, term: string, dept: string, seats: Seat[], counts: TermCounts, now: number): Promise<number> {
+  const d = diffDept(counts[dept], seats, now);
+  counts[dept] = d.next;
+  const { results: watches } = await db.prepare(`SELECT device, course, sec, armed, alerts FROM watches
+      WHERE term = ? AND dept = ? AND expires > ? AND (? = 0 OR created > ? OR course || '|' || sec IN (SELECT value FROM json_each(?)))`)
+    .bind(term, dept, now, d.since, d.since, JSON.stringify(d.crossed))
+    .all<{ device: string; course: string; sec: string; armed: number; alerts: string }>();
 
   let alerts = 0;
+  const writes: D1PreparedStatement[] = [];
   const queue: D1PreparedStatement[] = [];
-  for (const w of watches!.results as { device: string; course: string; sec: string; armed: number; alerts: string }[]) {
-    const s = fresh.get(`${w.course}|${w.sec}`);
+  for (const w of watches) {
+    const s = d.next.s[`${w.course}|${w.sec}`];
     if (!s) continue; // section dropped from the catalog; the app shows it as missing
-    const r = step({ armed: !!w.armed, alerts: JSON.parse(w.alerts) as number[] }, s.avail, now);
+    const [avail, cap] = s;
+    const r = step({ armed: !!w.armed, alerts: JSON.parse(w.alerts) as number[] }, avail, now);
     if (r.next.armed !== !!w.armed || r.alert) {
       writes.push(db.prepare('UPDATE watches SET armed = ?, alerts = ?, last_alert = COALESCE(?, last_alert) WHERE device = ? AND term = ? AND course = ? AND sec = ?')
         .bind(r.next.armed ? 1 : 0, JSON.stringify(r.next.alerts), r.alert ? now : null, w.device, term, w.course, w.sec));
     }
     if (r.alert) {
       alerts++;
-      const seatsLeft = s.avail === 1 ? '1 seat' : `${s.avail} seats`;
       queue.push(db.prepare('INSERT INTO outbox (device, message, topic, next, expires) VALUES (?, ?, ?, ?, ?)').bind(
         w.device,
-        JSON.stringify({ title: `${w.course} ${w.sec} has ${seatsLeft} open`, body: `${s.avail} of ${s.cap} open at ${clock(now)}. Register on Empower before it goes.`, url: '/#/seats', tag: `${term}-${w.course}-${w.sec}` }),
+        JSON.stringify({ title: `${w.course} ${w.sec}: ${avail} of ${cap} open`, body: `At ${clock(now)}`, url: '/#/seats', tag: `${term}-${w.course}-${w.sec}` }),
         `${term}${w.course}${w.sec}`, now, now + ALERT_TTL,
       ));
     }
   }
   // Shuffled so the same people aren't always first when one seat opens for many watchers.
-  await db.batch([...writes, ...shuffle(queue)]);
+  if (writes.length || queue.length) await db.batch([...writes, ...shuffle(queue)]);
   return alerts;
 }
 
@@ -135,7 +126,6 @@ export async function cleanup(db: D1Database, now: number) {
     db.prepare('DELETE FROM watches WHERE expires <= ?').bind(now),
     // Devices nobody has opened in 30 days and that watch nothing.
     db.prepare('DELETE FROM devices WHERE seen < ? AND id NOT IN (SELECT device FROM watches)').bind(now - 30 * 24 * 60 * MIN),
-    db.prepare('DELETE FROM seats WHERE seen < ?').bind(now - 2 * 24 * 60 * MIN),
     db.prepare('DELETE FROM signups WHERE day < ?').bind(new Date(now - 2 * 24 * 60 * MIN).toISOString().slice(0, 10)),
   ]);
 }
@@ -156,6 +146,7 @@ export async function run(env: Env, now = Date.now()): Promise<RunReport> {
   if (!(await lock(db, now))) return { pushed, polled: [], alerts: 0, skipped: 'another run is polling' };
 
   const polled = (st.polled as Record<string, number> | undefined) ?? {};
+  const counts: Record<string, TermCounts> = {}; // term -> counts, loaded for the terms this run polls
   let session = st.session as Session | undefined;
   const report: RunReport = { pushed, polled: [], alerts: 0 };
   const writes: D1PreparedStatement[] = [];
@@ -163,6 +154,8 @@ export async function run(env: Env, now = Date.now()): Promise<RunReport> {
     const keys = watched.map((w) => `${w.term}|${w.dept}`);
     const pick = pickDepts(keys, polled, now, gap(p), pushed > 10 ? 1 : DEPTS_MAX);
     if (!pick.length) { report.skipped = 'all departments fresh'; return report; }
+    const stored = await kvGet<TermCounts>(db, [...new Set(pick.map((k) => `live:${k.split('|')[0]}`))]);
+    for (const [k, v] of Object.entries(stored)) counts[k.slice(5)] = v;
     let wasSlow = false;
     for (const key of pick) {
       if (Date.now() - now > WALL_MS) break;
@@ -198,7 +191,7 @@ export async function run(env: Env, now = Date.now()): Promise<RunReport> {
       polled[key] = now;
       report.polled.push(key);
       if (!got.seats.length) writes.push(logEvent(db, now, 'empty', { dept })); // a bad filter or a page change
-      else report.alerts += await apply(db, term, dept, got.seats, now);
+      else report.alerts += await apply(db, term, dept, got.seats, (counts[term] ??= {}), now);
       if (recordTime(p, dept, got.ms).slow) {
         // Their server is struggling: poll less often and stop for this run.
         p.slow = Math.min(p.slow + 1, 3);
@@ -211,6 +204,7 @@ export async function run(env: Env, now = Date.now()): Promise<RunReport> {
     if (report.alerts) writes.push(logEvent(db, now, 'alerts', { n: report.alerts, polled: report.polled }));
     return report;
   } finally {
+    for (const [term, c] of Object.entries(counts)) writes.push(kvPut(db, `live:${term}`, pruneTerm(c, now)));
     writes.push(kvPut(db, 'poller', p), kvPut(db, 'polled', polled), unlock(db));
     if (session) writes.push(kvPut(db, 'session', session));
     else writes.push(db.prepare("DELETE FROM kv WHERE k = 'session'"));
