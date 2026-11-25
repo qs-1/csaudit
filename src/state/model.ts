@@ -45,7 +45,7 @@ export function useTermData(entry: TermEntry): { term: Term | null; failed: bool
  * The hourly snapshot with fresher counts on top, where the seat alerts poller has them (departments someone
  * watches, seen in the last 10 minutes). Only counts it saw after the snapshot replace it.
  */
-const withLive = memoLast((t: Term | null, live: LiveSeats): Term | null => {
+export function overlayLive(t: Term | null, live: LiveSeats): Term | null {
   if (!t || !live.size) return t;
   const asOf = Date.parse(t.asOf);
   let changed = false;
@@ -56,7 +56,8 @@ const withLive = memoLast((t: Term | null, live: LiveSeats): Term | null => {
     return { ...s, avail: l[0], cap: l[1], live: l[2] };
   });
   return changed ? { ...t, sections } : t;
-});
+}
+const withLive = memoLast(overlayLive);
 
 /* ---------- The audit model every screen reads from ---------- */
 

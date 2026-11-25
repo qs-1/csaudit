@@ -116,12 +116,40 @@ async function guarded<T>(fn: () => Promise<T>): Promise<T | undefined> {
   finally { useSeats.setState({ busy: false }); }
 }
 
+const same = (a: Pick<Watch, 'term' | 'course' | 'sec'>, b: Pick<Watch, 'term' | 'course' | 'sec'>) => a.term === b.term && a.course === b.course && a.sec === b.sec;
+
+// Watch changes run one at a time: two quick taps on a new device would otherwise create two devices.
+let queue: Promise<unknown> = Promise.resolve();
+let pending = 0;
+
+/**
+ * Shows the change at once and sends it after any earlier ones. The server's list is applied only when nothing else
+ * is waiting, so a reply doesn't briefly undo a later tap. A refused change puts its watch back as it was.
+ */
+function optimistic(change: (ws: Watch[]) => Watch[], undo: (ws: Watch[]) => Watch[], body: () => Promise<ListReply>): Promise<void> {
+  useSeats.setState({ watches: change(useSeats.getState().watches) });
+  pending++;
+  const run = queue.then(async () => {
+    try {
+      const r = await body();
+      if (pending === 1) take(r);
+    } catch (e) {
+      useSeats.setState({ watches: undo(useSeats.getState().watches) });
+      throw e;
+    } finally { pending--; }
+  });
+  queue = run.catch(() => {});
+  return run;
+}
+
+export const isWatching = (watches: Watch[], term: string, course: string, sec: string) => watches.some((w) => same(w, { term, course, sec }));
+
 export const seats = {
   hasDevice: () => !!readDevice(),
 
   async refresh() {
     if (!readDevice()) { useSeats.setState({ loaded: true, watches: [] }); return; }
-    try { take(await api<ListReply>('/watches')); }
+    try { const r = await api<ListReply>('/watches'); if (!pending) take(r); }
     catch (e) {
       if (e instanceof SeatError && e.status === 401) { saveDevice(null); useSeats.setState({ loaded: true, watches: [], push: 'none' }); return; }
       useSeats.setState({ loaded: true, error: e instanceof Error ? e.message : String(e) });
@@ -129,14 +157,20 @@ export const seats = {
   },
 
   /** Watches a section. `avail` is what the planner showed, so the Worker knows whether it looked full. */
-  watch: (term: string, course: string, sec: string, avail: number) => guarded(async () => {
-    await ensureDevice();
-    take(await api<ListReply>('/watches', { method: 'POST', body: JSON.stringify({ term, course, sec, avail }) }));
-  }),
+  watch(term: string, course: string, sec: string, avail: number) {
+    const now = Date.now();
+    const w: Watch = { term, course, sec, armed: avail <= 0 ? 1 : 0, last_alert: null, created: now, expires: now + 45 * 864e5, avail: null, cap: null, seen: null, changed: null };
+    return optimistic((ws) => [...ws.filter((x) => !same(x, w)), w], (ws) => ws.filter((x) => !same(x, w)), async () => {
+      await ensureDevice();
+      return api<ListReply>('/watches', { method: 'POST', body: JSON.stringify({ term, course, sec, avail }) });
+    });
+  },
 
-  unwatch: (w: Pick<Watch, 'term' | 'course' | 'sec'>) => guarded(async () => {
-    take(await api<ListReply>('/watches', { method: 'DELETE', body: JSON.stringify({ term: w.term, course: w.course, sec: w.sec }) }));
-  }),
+  unwatch(w: Pick<Watch, 'term' | 'course' | 'sec'>) {
+    const old = useSeats.getState().watches.find((x) => same(x, w));
+    return optimistic((ws) => ws.filter((x) => !same(x, w)), (ws) => (old ? [...ws, old] : ws),
+      () => api<ListReply>('/watches', { method: 'DELETE', body: JSON.stringify({ term: w.term, course: w.course, sec: w.sec }) }));
+  },
 
   /** Asks for permission and subscribes. Must run from a tap (iOS and Safari require it). */
   enablePush: () => guarded(async () => {
@@ -206,27 +240,30 @@ export function useWatchPolling(enabled = true) {
 export type LiveSeats = Map<string, [avail: number, cap: number, seen: number]>;
 const EMPTY: LiveSeats = new Map();
 
-// One fetch a minute for the whole page, however many components read the model.
-let live: { term: string | null; map: LiveSeats; at: number; busy: boolean } = { term: null, map: EMPTY, at: 0, busy: false };
+// One fetch a minute per term for the whole page, however many components read it.
+type Live = { map: LiveSeats; at: number; busy: boolean };
+const live = new Map<string, Live>();
+let version = 0;
 const listeners = new Set<() => void>();
-const publish = () => listeners.forEach((f) => f());
+const publish = () => { version++; listeners.forEach((f) => f()); };
 
 function loadLive(term: string) {
-  if (document.visibilityState !== 'visible' || live.busy || (live.term === term && Date.now() - live.at < 55_000)) return;
-  live = { ...live, busy: true };
+  const cur = live.get(term);
+  if (document.visibilityState !== 'visible' || cur?.busy || (cur && Date.now() - cur.at < 55_000)) return;
+  live.set(term, { map: cur?.map ?? EMPTY, at: cur?.at ?? 0, busy: true });
   fetch(`/api/seats?term=${encodeURIComponent(term)}`)
     .then((r) => (r.ok ? r.json() : null))
     .then((j: { seats?: [string, string, number, number, number][] } | null) => {
       const map: LiveSeats = j?.seats?.length ? new Map(j.seats.map(([c, sec, a, cap, seen]) => [`${c}|${sec}`, [a, cap, seen]])) : EMPTY;
-      live = { term, map, at: Date.now(), busy: false };
+      live.set(term, { map, at: Date.now(), busy: false });
       publish();
     })
-    .catch(() => { live = { ...live, term, at: Date.now(), busy: false }; });
+    .catch(() => { live.set(term, { map: cur?.map ?? EMPTY, at: Date.now(), busy: false }); });
 }
 
 /** Fresher seat counts than the hourly snapshot, for departments someone watches. Refreshed every minute while visible. */
 export function useLiveSeats(term: string | null): LiveSeats {
-  const snap = useSyncExternalStore((f) => { listeners.add(f); return () => listeners.delete(f); }, () => live, () => live);
+  useSyncExternalStore((f) => { listeners.add(f); return () => listeners.delete(f); }, () => version, () => version);
   useEffect(() => {
     if (!term || import.meta.env.MODE === 'test') return;
     const tick = () => loadLive(term);
@@ -235,5 +272,5 @@ export function useLiveSeats(term: string | null): LiveSeats {
     document.addEventListener('visibilitychange', tick);
     return () => { clearInterval(id); document.removeEventListener('visibilitychange', tick); };
   }, [term]);
-  return snap.term === term ? snap.map : EMPTY;
+  return (term && live.get(term)?.map) || EMPTY;
 }
