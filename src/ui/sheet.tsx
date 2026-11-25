@@ -45,18 +45,40 @@ function useKeyboardInset(active: boolean) {
     const vv = window.visualViewport;
     if (!active || !vv) { setKb({ inset: 0 }); return; }
     const update = () => {
-      if (vv.scale > 1.01 || window.innerHeight - vv.height <= 80) { setKb({ inset: 0 }); return; }
-      setKb({
-        inset: Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)),
-        maxH: Math.floor(vv.height * 0.94),
-      });
+      const covered = window.innerHeight - vv.height;
+      if (vv.scale > 1.01 || covered <= 80) {
+        setKb((p) => (p.inset === 0 && p.maxH === undefined ? p : { inset: 0 }));
+        return;
+      }
+      const inset = Math.max(0, Math.round(covered - vv.offsetTop));
+      const maxH = Math.floor(vv.height * 0.94);
+      setKb((p) => (p.inset === inset && p.maxH === maxH ? p : { inset, maxH }));
     };
-    update();
+    // Tapping a field that is already focused re-opens the keyboard without a focus change, and Android Chrome doesn't
+    // reliably fire a visualViewport event for that. The keyboard also animates in over ~300ms, and autofocus on open
+    // can beat these listeners. So re-measure after taps and focus changes, and poll cheaply while the sheet is open.
+    const timers: number[] = [];
+    const kick = () => {
+      update();
+      for (const ms of [60, 150, 300, 500, 800]) timers.push(window.setTimeout(update, ms));
+    };
+    kick();
+    const poll = window.setInterval(update, 150);
     vv.addEventListener('resize', update);
     vv.addEventListener('scroll', update);
+    window.addEventListener('resize', update);
+    document.addEventListener('focusin', kick);
+    document.addEventListener('focusout', kick);
+    document.addEventListener('pointerup', kick, true);
     return () => {
+      window.clearInterval(poll);
+      timers.forEach(window.clearTimeout);
       vv.removeEventListener('resize', update);
       vv.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+      document.removeEventListener('focusin', kick);
+      document.removeEventListener('focusout', kick);
+      document.removeEventListener('pointerup', kick, true);
     };
   }, [active]);
   return kb;
